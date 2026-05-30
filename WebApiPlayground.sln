@@ -1,9 +1,21 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 25.0.1706.1
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebApiPlayground", "WebApiPlayground\WebApiPlayground.csproj", "{2BF944A6-B5D0-4890-85E1-B1C4D098259F}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{CA000001-0000-0000-0000-000000000001}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{CA000002-0000-0000-0000-000000000002}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebApiPlayground.Api", "src\WebApiPlayground.Api\WebApiPlayground.Api.csproj", "{2BF944A6-B5D0-4890-85E1-B1C4D098259F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebApiPlayground.Domain", "src\WebApiPlayground.Domain\WebApiPlayground.Domain.csproj", "{CA000003-0000-0000-0000-000000000003}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebApiPlayground.Application", "src\WebApiPlayground.Application\WebApiPlayground.Application.csproj", "{CA000004-0000-0000-0000-000000000004}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebApiPlayground.Infrastructure", "src\WebApiPlayground.Infrastructure\WebApiPlayground.Infrastructure.csproj", "{CA000005-0000-0000-0000-000000000005}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebApiPlayground.Tests", "tests\WebApiPlayground.Tests\WebApiPlayground.Tests.csproj", "{CA000006-0000-0000-0000-000000000006}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,9 +27,32 @@ Global
 		{2BF944A6-B5D0-4890-85E1-B1C4D098259F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2BF944A6-B5D0-4890-85E1-B1C4D098259F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2BF944A6-B5D0-4890-85E1-B1C4D098259F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CA000003-0000-0000-0000-000000000003}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CA000003-0000-0000-0000-000000000003}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CA000003-0000-0000-0000-000000000003}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CA000003-0000-0000-0000-000000000003}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CA000004-0000-0000-0000-000000000004}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CA000004-0000-0000-0000-000000000004}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CA000004-0000-0000-0000-000000000004}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CA000004-0000-0000-0000-000000000004}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CA000005-0000-0000-0000-000000000005}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CA000005-0000-0000-0000-000000000005}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CA000005-0000-0000-0000-000000000005}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CA000005-0000-0000-0000-000000000005}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CA000006-0000-0000-0000-000000000006}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CA000006-0000-0000-0000-000000000006}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CA000006-0000-0000-0000-000000000006}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CA000006-0000-0000-0000-000000000006}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{2BF944A6-B5D0-4890-85E1-B1C4D098259F} = {CA000001-0000-0000-0000-000000000001}
+		{CA000003-0000-0000-0000-000000000003} = {CA000001-0000-0000-0000-000000000001}
+		{CA000004-0000-0000-0000-000000000004} = {CA000001-0000-0000-0000-000000000001}
+		{CA000005-0000-0000-0000-000000000005} = {CA000001-0000-0000-0000-000000000001}
+		{CA000006-0000-0000-0000-000000000006} = {CA000002-0000-0000-0000-000000000002}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {87148C82-678D-410F-9D58-EA5255876FC1}
