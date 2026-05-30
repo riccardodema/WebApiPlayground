@@ -24,6 +24,22 @@ app.MapScalarApiReference();
 
 ---
 
+## [L02] UseHttpsRedirection produce warning rumoroso con il profilo HTTP in development
+
+**Approccio errato:** chiamare `app.UseHttpsRedirection()` incondizionatamente in `Program.cs`.  
+**Errore:** `[WRN] Microsoft.AspNetCore.HttpsPolicy.HttpsRedirectionMiddleware: Failed to determine the https port for redirect.` ad ogni request quando si usa il profilo `http` (senza HTTPS configurato).  
+**Causa:** Serilog rende visibili i log `Warning` di `Microsoft.AspNetCore` che il logger di default filtrava; `UseHttpsRedirection` non riesce a trovare la porta HTTPS nel profilo HTTP-only.  
+**Soluzione:** Applicare il middleware solo fuori da development:
+
+```csharp
+if (!app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
+```
+
+**Nota:** in produzione `UseHttpsRedirection` rimane attivo come atteso.
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

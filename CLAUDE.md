@@ -10,6 +10,8 @@
 | Package, URL, comandi dotnet/ef | `.claude/context/stack.md` |
 | Prima di usare Swagger/Swashbuckle o configurare OpenAPI | `.claude/lessons.md` |
 | Errori ricorrenti o approcci da evitare | `.claude/lessons.md` |
+| Aggiungere logging a un layer / nuova risorsa | `.claude/context/logging.md` |
+| Capire livelli, named properties, regole Serilog | `.claude/context/logging.md` |
 
 ## Quick reference
 
