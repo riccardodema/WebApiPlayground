@@ -1,113 +1,45 @@
-# /migration — Gestione migrations EF Core
+# /migration — EF Core Migrations
 
-Guida per aggiungere, applicare e gestire le migrations Entity Framework Core nel progetto.
-
-**Uso**: `/migration <NomeMigration>` (es. `/migration AddPublisherEntity`)
-
----
+**Uso:** `/migration <NomeMigration>` (es. `/migration AddPublisherEntity`)
 
 ## Prerequisiti
 
-### 1. Verificare la connection string
-
-In `WebApiPlayground/Program.cs` la connection string è attualmente un placeholder:
-
-```csharp
-options.UseSqlServer("stringaacaso") // to be replaced
-```
-
-**Sostituire** con una connection string reale, preferibilmente tramite `appsettings.Development.json`:
-
-```json
-{
-  "ConnectionStrings": {
-    "Default": "Server=localhost;Database=WebApiPlayground;Trusted_Connection=True;TrustServerCertificate=True;"
-  }
-}
-```
-
-E in `Program.cs`:
-
-```csharp
-builder.Services.AddDbContext<PlaygroundDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
-```
-
-### 2. Verificare che dotnet-ef sia installato
-
-```bash
-dotnet ef --version
-```
-
-Se non installato:
-
-```bash
-dotnet tool install --global dotnet-ef
-```
-
----
+1. `dotnet-ef` installato: `dotnet tool install --global dotnet-ef`
+2. Connection string valida in `appsettings.Development.json` (vedere `.claude/context/stack.md`)
 
 ## Comandi
 
-### Aggiungere una migration
-
 ```bash
-dotnet ef migrations add <NomeMigration> --project WebApiPlayground/WebApiPlayground.csproj
+# Aggiungere
+dotnet ef migrations add <Nome> \
+  --project src/WebApiPlayground.Infrastructure \
+  --startup-project src/WebApiPlayground.Api
+
+# Applicare
+dotnet ef database update \
+  --project src/WebApiPlayground.Infrastructure \
+  --startup-project src/WebApiPlayground.Api
+
+# Rimuovere ultima (solo se NON applicata al DB)
+dotnet ef migrations remove \
+  --project src/WebApiPlayground.Infrastructure \
+  --startup-project src/WebApiPlayground.Api
 ```
 
-Convenzioni per il nome:
-- `InitialCreate` — prima migration
-- `Add<Entity>Entity` — aggiunta nuova entità (es. `AddPublisherEntity`)
-- `Add<Field>To<Entity>` — aggiunta campo (es. `AddIsbnToBook`)
-- `Remove<Field>From<Entity>` — rimozione campo
-- `Rename<Old>To<New>In<Entity>` — rinomina
+## Naming convention
 
-### Applicare al database
+| Caso | Nome |
+|------|------|
+| Prima migration | `InitialCreate` |
+| Nuova entità | `Add<Entity>Entity` |
+| Nuovo campo | `Add<Field>To<Entity>` |
+| Rimozione campo | `Remove<Field>From<Entity>` |
 
-```bash
-dotnet ef database update --project WebApiPlayground/WebApiPlayground.csproj
-```
+## Troubleshooting
 
-### Applicare fino a una migration specifica
-
-```bash
-dotnet ef database update <NomeMigration> --project WebApiPlayground/WebApiPlayground.csproj
-```
-
-### Rimuovere l'ultima migration (solo se NON ancora applicata al DB)
-
-```bash
-dotnet ef migrations remove --project WebApiPlayground/WebApiPlayground.csproj
-```
-
-### Generare script SQL (senza applicare)
-
-```bash
-dotnet ef migrations script --project WebApiPlayground/WebApiPlayground.csproj --output migration.sql
-```
-
----
-
-## Struttura file generati
-
-Le migrations vengono create in `WebApiPlayground/Migrations/`:
-
-```
-Migrations/
-├── <Timestamp>_<NomeMigration>.cs       # Up() e Down()
-├── <Timestamp>_<NomeMigration>.Designer.cs
-└── PlaygroundDbContextModelSnapshot.cs  # Snapshot del modello corrente
-```
-
-Non modificare manualmente i file `.Designer.cs` e `ModelSnapshot.cs`.
-
----
-
-## Troubleshooting comune
-
-| Errore | Causa | Soluzione |
-|--------|-------|-----------|
-| `No DbContext was found` | Progetto non trovato | Verificare `--project` path |
-| `Connection refused` | DB non raggiungibile | Verificare connection string e server SQL |
-| `The migration ... has already been applied` | Migration già nel DB | Non rieseguire, usare una nuova migration |
-| `Unable to create an object of type 'PlaygroundDbContext'` | DI non configurato per design-time | Aggiungere `IDesignTimeDbContextFactory` o usare connection string in `appsettings` |
+| Errore | Soluzione |
+|--------|-----------|
+| `No DbContext was found` | Verificare path `--project` e `--startup-project` |
+| `Connection refused` | Verificare connection string e SQL Server attivo |
+| `Unable to create PlaygroundDbContext` | Aggiungere `IDesignTimeDbContextFactory` o connection string in `appsettings` |
+| Migration già applicata | Creare una nuova migration, non rieseguire |
