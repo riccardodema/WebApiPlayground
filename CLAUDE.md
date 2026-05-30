@@ -7,7 +7,7 @@ Playground didattico per esplorare pattern e best practice per le Web API .NET, 
 
 - Framework: ASP.NET Core 10 (`net10.0`)
 - ORM: Entity Framework Core 10 + provider SQL Server
-- Documentazione API: Swagger/OpenAPI (Swashbuckle 7.3)
+- Documentazione API: OpenAPI (`Microsoft.AspNetCore.OpenApi` 10.0.0) + Scalar UI (`Scalar.AspNetCore` 2.6.0)
 - Test: xUnit 2.9 + Moq 4.20
 - Nullable reference types abilitati
 
@@ -151,7 +151,7 @@ public class BooksService : IBooksService
 | Package | Progetto | Versione |
 |---------|----------|----------|
 | `Microsoft.AspNetCore.OpenApi` | API | 10.0.0 |
-| `Swashbuckle.AspNetCore` | API | 7.3.1 |
+| `Scalar.AspNetCore` | API | 2.6.0 |
 | `Microsoft.EntityFrameworkCore` | Infrastructure | 10.0.0 |
 | `Microsoft.EntityFrameworkCore.SqlServer` | Infrastructure | 10.0.0 |
 | `xunit` | Tests | 2.9.3 |
@@ -182,7 +182,8 @@ La connection string locale va in `WebApiPlayground/appsettings.Development.json
 dotnet run --project src/WebApiPlayground.Api/WebApiPlayground.Api.csproj
 ```
 
-- Swagger UI: `https://localhost:7123/swagger`
+- Scalar UI: `http://localhost:5242/scalar/v1`
+- OpenAPI JSON: `http://localhost:5242/openapi/v1.json`
 - HTTP: `http://localhost:5242`
 
 Prerequisito: .NET 10 SDK installato + connection string valida in `appsettings.Development.json`.
@@ -214,6 +215,36 @@ dotnet ef database update --project src/WebApiPlayground.Infrastructure --startu
 
 # Rimuovere l'ultima migration (se non applicata)
 dotnet ef migrations remove --project src/WebApiPlayground.Infrastructure --startup-project src/WebApiPlayground.Api
+```
+
+---
+
+## Commit convention
+
+I commit seguono il formato **Conventional Commits**:
+
+```
+<type>[scope opzionale]: <descrizione>
+
+[body opzionale]
+```
+
+| Tipo | Quando usarlo |
+|------|---------------|
+| `feat` | Nuova funzionalità |
+| `fix` | Correzione di un bug |
+| `chore` | Manutenzione, dipendenze, configurazione |
+| `refactor` | Ristrutturazione senza cambio di comportamento |
+| `test` | Aggiunta o modifica di test |
+| `docs` | Solo documentazione |
+| `ci` | Pipeline CI/CD |
+
+Esempi:
+```
+feat(books): add pagination to GetAllBooks endpoint
+fix(api): replace Swashbuckle with Scalar for .NET 10 compatibility
+chore: add VS Code debug configuration
+test(books): add edge case for null Author in BooksService
 ```
 
 ---
