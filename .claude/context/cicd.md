@@ -6,8 +6,8 @@
 .azure/
 ├── pipelines/
 │   ├── pr-validation.yml   # Validazione PR: build + unit + integration tests
-│   ├── ci.yml              # CI su push a main: build + test + pubblica artifact
-│   └── cd.yml              # CD: applica migrations + deploy su Azure App Service
+│   ├── ci.yml              # CI su push a main: build + test + pubblica artifact (app + DACPAC)
+│   └── cd.yml              # CD: pubblica DACPAC (schema DB) + deploy su Azure App Service
 └── templates/
     ├── steps-restore-build.yml  # Template: UseDotNet, cache NuGet, restore, build
     └── steps-test.yml           # Template: unit test, integration test, coverage
@@ -19,7 +19,7 @@
 |---|---|---|
 | `pr-validation.yml` | Apertura/aggiornamento PR verso `main` | Gate obbligatorio prima del merge |
 | `ci.yml` | Push/merge su `main` | Produce artifact versionati pronti al deploy |
-| `cd.yml` | Manuale o automatico dopo CI | Applica migrations e deploya su App Service |
+| `cd.yml` | Manuale o automatico dopo CI | Pubblica il DACPAC (schema DB) e deploya su App Service |
 
 ---
 
@@ -86,19 +86,26 @@ In Azure DevOps → Repos → Branches → main → Branch policies:
 - Gli integration test usano **Testcontainers.MsSql** che richiede il Docker daemon: `ubuntu-latest` lo include out-of-the-box. Non usare agenti self-hosted senza verificare che Docker sia disponibile.
 - Se si usano agenti self-hosted, impostare `TESTCONTAINERS_RYUK_DISABLED: false` come environment variable nel job integration test.
 
-### EF Core Migrations
+### Database — DACPAC (SQL project)
 
-- In CI si genera un **migrations bundle** self-contained (`efbundle`) invece di eseguire `dotnet ef database update` inline. Il bundle non richiede .NET SDK sull'agent di deploy.
-- Il bundle viene pubblicato come artifact separato (`efbundle`) e scaricato dalla pipeline CD.
-- Il bundle va eseguito **prima** del deploy dell'applicazione per garantire che lo schema sia aggiornato quando il nuovo codice parte.
-- Comando di build bundle (in CI):
-  ```
-  dotnet ef migrations bundle \
-    --project src/WebApiPlayground.Infrastructure \
-    --startup-project src/WebApiPlayground.Api \
-    --self-contained \
-    --output $(Build.ArtifactStagingDirectory)/efbundle
-  ```
+Lo schema del DB è versionato come **SQL project** in `database/` (vedi `.claude/context/database.md`).
+Il rilascio del DB avviene tramite **DACPAC**, NON tramite EF migrations.
+
+- **CI**: il `dotnet build` della solution (template `steps-restore-build`) compila anche
+  `database/WebApiPlayground.Database.sqlproj` producendo il `.dacpac`. Lo step
+  _Stage database DACPAC_ copia `.dacpac` + `WebApiPlayground.Database.publish.xml`
+  e li pubblica come artifact **`database`**.
+- **CD**: scarica l'artifact `database`, installa `Microsoft.SqlPackage` (dotnet tool,
+  cross-platform su `ubuntu-latest`) ed esegue `sqlpackage /Action:Publish` con il
+  publish profile e `ConnectionStrings__WebConnectionString` come target.
+- La pubblicazione del DACPAC va eseguita **prima** del deploy dell'app, così lo schema
+  è già aggiornato quando il nuovo codice parte (ordine già rispettato in `cd.yml`).
+- Il profilo imposta `BlockOnPossibleDataLoss=True` e `DropObjectsNotInSource=False`:
+  un publish che perderebbe dati fallisce invece di procedere silenziosamente.
+- Il seed (`Scripts/PostDeployment/Script.PostDeployment.sql`) gira a ogni publish ed è
+  idempotente — vedi `database/README.md`.
+- Comando equivalente in locale: `./database/deploy.sh` (publish) o `./database/deploy.sh script`
+  (genera solo il diff da rivedere).
 
 ### Cache NuGet
 
@@ -112,8 +119,8 @@ In Azure DevOps → Repos → Branches → main → Branch policies:
 ### Versionamento artifact
 
 - Il `Build.BuildNumber` di Azure DevOps identifica univocamente ogni run CI.
-- Gli artifact `drop` e `efbundle` sono sempre associati al `Build.BuildNumber` della CI che li ha prodotti.
-- La pipeline CD specifica la CI sorgente tramite `resources.pipelines` per garantire coerenza tra app e migrations bundle.
+- Gli artifact `drop` (app) e `database` (DACPAC) sono sempre associati al `Build.BuildNumber` della CI che li ha prodotti.
+- La pipeline CD specifica la CI sorgente tramite `resources.pipelines` per garantire coerenza tra app e schema DB.
 
 ### Percorsi da escludere dai trigger
 
