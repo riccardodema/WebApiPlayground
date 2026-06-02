@@ -1,0 +1,23 @@
+# PR gate: build + unit/integration tests on every pull request to main.
+# Equivalent of .azure/pipelines/pr-validation.yml.
+# Set this workflow as a required status check in branch protection for `main`.
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - '.claude/**'
+
+permissions:
+  contents: read
+
+# Cancel superseded runs when the PR is updated.
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    uses: ./.github/workflows/build-test.yml

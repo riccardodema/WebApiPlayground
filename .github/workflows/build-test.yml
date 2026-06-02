@@ -1,0 +1,98 @@
+# Reusable workflow: restore, build, test and (optionally) produce deploy artifacts.
+# Called by pr-validation.yml (PR gate) and ci-cd.yml (push to main).
+# Mirrors the Azure DevOps templates in .azure/templates/.
+name: build-test
+
+on:
+  workflow_call:
+    inputs:
+      build-configuration:
+        type: string
+        default: Release
+      upload-artifacts:
+        description: When true, publishes the app + DACPAC as artifacts for deployment.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Cache NuGet without requiring a lock file (key on the project files).
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore
+
+      # Builds the whole solution, including the SQL project => produces the DACPAC.
+      - name: Build (${{ inputs.build-configuration }})
+        run: dotnet build --configuration ${{ inputs.build-configuration }} --no-restore
+
+      - name: Unit tests
+        run: >
+          dotnet test tests/WebApiPlayground.Tests/WebApiPlayground.Tests.csproj
+          --configuration ${{ inputs.build-configuration }} --no-build
+          --logger "trx;LogFileName=unit.trx"
+          --results-directory TestResults
+          --collect "XPlat Code Coverage"
+
+      # Integration tests use Testcontainers.MsSql; Docker is available on
+      # GitHub-hosted ubuntu runners out of the box, so no service container needed.
+      - name: Integration tests
+        run: >
+          dotnet test tests/WebApiPlayground.IntegrationTests/WebApiPlayground.IntegrationTests.csproj
+          --configuration ${{ inputs.build-configuration }} --no-build
+          --logger "trx;LogFileName=integration.trx"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/**/*.trx
+          if-no-files-found: ignore
+
+      # ---- Deployment artifacts (only on CI for main) -------------------------
+      - name: Publish application
+        if: ${{ inputs.upload-artifacts }}
+        run: >
+          dotnet publish src/WebApiPlayground.Api/WebApiPlayground.Api.csproj
+          --configuration ${{ inputs.build-configuration }} --no-build
+          --output artifacts/app
+
+      - name: Stage database DACPAC
+        if: ${{ inputs.upload-artifacts }}
+        run: |
+          mkdir -p artifacts/database
+          cp "database/bin/${{ inputs.build-configuration }}/WebApiPlayground.Database.dacpac" artifacts/database/
+          cp "database/WebApiPlayground.Database.publish.xml" artifacts/database/
+
+      - name: Upload app artifact
+        if: ${{ inputs.upload-artifacts }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: app
+          path: artifacts/app
+
+      - name: Upload database artifact (DACPAC)
+        if: ${{ inputs.upload-artifacts }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: database
+          path: artifacts/database

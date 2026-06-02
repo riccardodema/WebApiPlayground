@@ -13,6 +13,7 @@
 | Aggiungere logging a un layer / nuova risorsa | `.claude/context/logging.md` |
 | Capire livelli, named properties, regole Serilog | `.claude/context/logging.md` |
 | Configurare/capire pipeline CI/CD Azure DevOps | `.claude/context/cicd.md` |
+| Configurare/capire CI/CD GitHub Actions | `.github/workflows/README.md` |
 | Schema DB versionato, SQL project, DACPAC, deploy/seed | `.claude/context/database.md` |
 | Modificare tabelle/schema o allineare entità EF al DB | `.claude/context/database.md` + `.claude/context/conventions.md` |
 
