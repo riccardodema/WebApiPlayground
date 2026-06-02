@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 using WebApiPlayground.Application.DTOs;
@@ -14,7 +15,7 @@ public class BooksServiceTests
 
     public BooksServiceTests()
     {
-        _sut = new BooksService(_repositoryMock.Object);
+        _sut = new BooksService(_repositoryMock.Object, NullLogger<BooksService>.Instance);
     }
 
     [Fact]

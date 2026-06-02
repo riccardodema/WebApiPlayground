@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.Build.Sql/2.1.0">
+  <PropertyGroup>
+    <Name>WebApiPlayground.Database</Name>
+    <!-- Azure SQL Edge / SQL Server 2019 engine (15.x) => Sql150 -->
+    <DSP>Microsoft.Data.Tools.Schema.Sql.Sql150DatabaseSchemaProvider</DSP>
+    <ModelCollation>1040, CI</ModelCollation>
+    <TargetDatabaseSet>True</TargetDatabaseSet>
+  </PropertyGroup>
+
+  <!--
+    The Microsoft.Build.Sql SDK auto-includes every **/*.sql file as a "Build"
+    (schema) item. Pre/Post-deployment scripts must be removed from Build and
+    declared with their dedicated item type, otherwise they end up in the model.
+  -->
+  <ItemGroup>
+    <Build Remove="Scripts/**/*.sql" />
+    <PostDeploy Include="Scripts/PostDeployment/Script.PostDeployment.sql" />
+  </ItemGroup>
+</Project>

@@ -13,14 +13,18 @@
 | Aggiungere logging a un layer / nuova risorsa | `.claude/context/logging.md` |
 | Capire livelli, named properties, regole Serilog | `.claude/context/logging.md` |
 | Configurare/capire pipeline CI/CD Azure DevOps | `.claude/context/cicd.md` |
+| Schema DB versionato, SQL project, DACPAC, deploy/seed | `.claude/context/database.md` |
+| Modificare tabelle/schema o allineare entità EF al DB | `.claude/context/database.md` + `.claude/context/conventions.md` |
 
 ## Quick reference
 
 ```
-Run:   dotnet run --project src/WebApiPlayground.Api/WebApiPlayground.Api.csproj
-Test:  dotnet test tests/WebApiPlayground.Tests/WebApiPlayground.Tests.csproj
-UI:    http://localhost:5242/scalar/v1
-JSON:  http://localhost:5242/openapi/v1.json
+Run:    dotnet run --project src/WebApiPlayground.Api/WebApiPlayground.Api.csproj
+Test:   dotnet test tests/WebApiPlayground.Tests/WebApiPlayground.Tests.csproj
+DB:     dotnet build database/WebApiPlayground.Database.sqlproj -c Release   (→ DACPAC)
+Deploy: DB_CONNECTION=... ./database/deploy.sh   (publish | script)
+UI:     http://localhost:5242/scalar/v1
+JSON:   http://localhost:5242/openapi/v1.json
 ```
 
 ## Skills disponibili

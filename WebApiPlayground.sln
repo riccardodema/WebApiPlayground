@@ -19,6 +19,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebApiPlayground.Tests", "t
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebApiPlayground.IntegrationTests", "tests\WebApiPlayground.IntegrationTests\WebApiPlayground.IntegrationTests.csproj", "{3ECC4FAF-EA7A-4689-AA37-F95822F3DBA9}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{E0096E63-5207-411F-2649-837654E3C58A}"
+EndProject
+Project("{42EA0DBD-9CF1-443E-919E-BE9C484E4577}") = "WebApiPlayground.Database", "database\WebApiPlayground.Database.sqlproj", "{A4C1D4CD-2513-4F11-8CEC-66EC01291673}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -101,6 +105,18 @@ Global
 		{3ECC4FAF-EA7A-4689-AA37-F95822F3DBA9}.Release|x64.Build.0 = Release|Any CPU
 		{3ECC4FAF-EA7A-4689-AA37-F95822F3DBA9}.Release|x86.ActiveCfg = Release|Any CPU
 		{3ECC4FAF-EA7A-4689-AA37-F95822F3DBA9}.Release|x86.Build.0 = Release|Any CPU
+		{A4C1D4CD-2513-4F11-8CEC-66EC01291673}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A4C1D4CD-2513-4F11-8CEC-66EC01291673}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A4C1D4CD-2513-4F11-8CEC-66EC01291673}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A4C1D4CD-2513-4F11-8CEC-66EC01291673}.Debug|x64.Build.0 = Debug|Any CPU
+		{A4C1D4CD-2513-4F11-8CEC-66EC01291673}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A4C1D4CD-2513-4F11-8CEC-66EC01291673}.Debug|x86.Build.0 = Debug|Any CPU
+		{A4C1D4CD-2513-4F11-8CEC-66EC01291673}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A4C1D4CD-2513-4F11-8CEC-66EC01291673}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A4C1D4CD-2513-4F11-8CEC-66EC01291673}.Release|x64.ActiveCfg = Release|Any CPU
+		{A4C1D4CD-2513-4F11-8CEC-66EC01291673}.Release|x64.Build.0 = Release|Any CPU
+		{A4C1D4CD-2513-4F11-8CEC-66EC01291673}.Release|x86.ActiveCfg = Release|Any CPU
+		{A4C1D4CD-2513-4F11-8CEC-66EC01291673}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -112,6 +128,7 @@ Global
 		{CA000005-0000-0000-0000-000000000005} = {CA000001-0000-0000-0000-000000000001}
 		{CA000006-0000-0000-0000-000000000006} = {CA000002-0000-0000-0000-000000000002}
 		{3ECC4FAF-EA7A-4689-AA37-F95822F3DBA9} = {CA000002-0000-0000-0000-000000000002}
+		{A4C1D4CD-2513-4F11-8CEC-66EC01291673} = {E0096E63-5207-411F-2649-837654E3C58A}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {87148C82-678D-410F-9D58-EA5255876FC1}
