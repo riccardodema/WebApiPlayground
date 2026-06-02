@@ -11,6 +11,13 @@ in `.azure/` (lo stesso progetto implementa entrambe le piattaforme).
 | `pr-validation.yml` | `pull_request` → `main` | Gate PR: chiama `build-test`. Da impostare come **required check** |
 | `ci-cd.yml` | `push` → `main` / `workflow_dispatch` | `build-test` (con artifact) → job **`deploy`** gated dall'environment `production` |
 
+> **Deploy disabilitato finché non configuri Azure.** Il job `deploy` ha
+> `if: vars.AZURE_WEBAPP_NAME != ''`: senza quella variabile viene **saltato**
+> (skipped, non fallito) → la CI resta verde e non viene fatta nessuna chiamata ad
+> Azure. Appena imposti `AZURE_WEBAPP_NAME` (+ i secret OIDC e l'environment), il
+> deploy parte in automatico dopo la CI e si ferma all'**approval gate** prima di
+> toccare la produzione (continuous delivery).
+
 Best practice adottate: **workflow riutilizzabile** (DRY, come i template Azure DevOps),
 **least-privilege `permissions`**, **concurrency** (cancella run superate), **caching NuGet**,
 **OIDC** verso Azure (niente secret long-lived), **approval gate** via GitHub Environments,

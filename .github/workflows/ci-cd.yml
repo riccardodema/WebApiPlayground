@@ -36,6 +36,12 @@ jobs:
 
   deploy:
     needs: ci
+    # Skip the deploy entirely until an Azure target is configured (the `vars`
+    # context is readable here; `secrets` is not). With no AZURE_WEBAPP_NAME set
+    # the job is SKIPPED — not failed — so CI stays green with zero Azure calls.
+    # Once configured, deploy auto-triggers after CI and still waits on the
+    # `production` environment approval gate before touching prod (continuous delivery).
+    if: ${{ vars.AZURE_WEBAPP_NAME != '' }}
     runs-on: ubuntu-latest
     environment: production          # approval gate + scoped secrets/variables
     permissions:

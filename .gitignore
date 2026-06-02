@@ -251,6 +251,10 @@ publish/
 *.pubxml
 *.publishproj
 
+# Exception: the SQL project publish profile holds deploy OPTIONS only (no
+# credentials) and must be versioned — the CI/CD pipelines package it as an artifact.
+!database/WebApiPlayground.Database.publish.xml
+
 # Microsoft Azure Web App publish settings. Comment the next line if you want to
 # checkin your Azure Web App publish settings, but sensitive information contained
 # in these scripts will be unencrypted

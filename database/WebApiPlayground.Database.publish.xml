@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Publish profile = deployment OPTIONS only (no credentials committed).
+    The target connection string is passed on the command line / via env, see deploy.sh.
+
+      sqlpackage /Action:Publish \
+        /SourceFile:bin/Release/WebApiPlayground.Database.dacpac \
+        /Profile:WebApiPlayground.Database.publish.xml \
+        /TargetConnectionString:"<your connection string>"
+-->
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TargetDatabaseName>PlaygroundDatabase</TargetDatabaseName>
+    <DeployScriptFileName>WebApiPlayground.Database.sql</DeployScriptFileName>
+    <!-- Safety: stop a publish that would lose data instead of silently dropping it -->
+    <BlockOnPossibleDataLoss>True</BlockOnPossibleDataLoss>
+    <!-- Do NOT drop objects that exist in the DB but not in the project, unless intended -->
+    <DropObjectsNotInSource>False</DropObjectsNotInSource>
+    <DropPermissionsNotInSource>False</DropPermissionsNotInSource>
+    <DropRoleMembersNotInSource>False</DropRoleMembersNotInSource>
+    <CreateNewDatabase>False</CreateNewDatabase>
+    <ScriptDatabaseOptions>False</ScriptDatabaseOptions>
+    <AllowIncompatiblePlatform>True</AllowIncompatiblePlatform>
+    <VerifyDeployment>True</VerifyDeployment>
+  </PropertyGroup>
+</Project>
