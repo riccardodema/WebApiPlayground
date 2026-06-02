@@ -14,6 +14,7 @@
 | Capire livelli, named properties, regole Serilog | `.claude/context/logging.md` |
 | Configurare/capire pipeline CI/CD Azure DevOps | `.claude/context/cicd.md` |
 | Configurare/capire CI/CD GitHub Actions | `.github/workflows/README.md` |
+| Infrastruttura Azure (IaC/Bicep), Key Vault, what-if, deploy | `.claude/context/iac.md` + `infra/README.md` |
 | Schema DB versionato, SQL project, DACPAC, deploy/seed | `.claude/context/database.md` |
 | Modificare tabelle/schema o allineare entità EF al DB | `.claude/context/database.md` + `.claude/context/conventions.md` |
 
@@ -24,6 +25,7 @@ Run:    dotnet run --project src/WebApiPlayground.Api/WebApiPlayground.Api.cspro
 Test:   dotnet test tests/WebApiPlayground.Tests/WebApiPlayground.Tests.csproj
 DB:     dotnet build database/WebApiPlayground.Database.sqlproj -c Release   (→ DACPAC)
 Deploy: DB_CONNECTION=... ./database/deploy.sh   (publish | script)
+IaC:    AZURE_SUBSCRIPTION_ID=... ./infra/deploy.sh   (whatif | deploy)
 UI:     http://localhost:5242/scalar/v1
 JSON:   http://localhost:5242/openapi/v1.json
 ```

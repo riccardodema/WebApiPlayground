@@ -59,11 +59,32 @@ dotnet build database/WebApiPlayground.Database.sqlproj -c Release   # → .dacp
 DB_CONNECTION='...' ./database/deploy.sh                             # publish (or 'script' to review the diff)
 ```
 
+## Infrastructure as code
+
+Azure resources are **versioned in the repo** as [Bicep](https://learn.microsoft.com/azure/azure-resource-manager/bicep/)
+([`infra/`](infra/)) — declarative, **idempotent** (re-applying the same state is a no-op),
+with **what-if** as a mandatory preview and automated tests (Bicep build/lint, **xUnit** unit
+tests over the compiled ARM, and **PSRule for Azure**). The foundation is an **Azure Key Vault** (RBAC auth, soft-delete, purge protection in
+prod) where the DB connection string lives in production — created by IaC, with the secret
+*value* set outside it so no secret ever flows through ARM deployments. See [infra/README.md](infra/README.md).
+
+```bash
+AZURE_SUBSCRIPTION_ID='...' ./infra/deploy.sh          # what-if (preview the diff)
+AZURE_SUBSCRIPTION_ID='...' ./infra/deploy.sh deploy   # apply (idempotent)
+```
+
+CI/CD on both platforms ([`.github/workflows/infra.yml`](.github/workflows/infra.yml) ·
+[`.azure/pipelines/infra.yml`](.azure/pipelines/infra.yml)): validate on PR, what-if → deploy on
+`main` gated by the `production` environment. Same *disabled-until-configured* pattern as the app
+deploy — the deploy job is skipped (not failed) until `AZURE_LOCATION` is set.
+
 ## Testing
 
 - **Unit** — `tests/WebApiPlayground.Tests` (xUnit + Moq), services in isolation.
 - **Integration** — `tests/WebApiPlayground.IntegrationTests`, real SQL Server spun up via
   **Testcontainers** (Docker), exercising the API end-to-end.
+- **Infrastructure** — `tests/WebApiPlayground.IacTests`, compiles the Bicep to ARM and asserts
+  the security posture / idempotency (no Azure or Docker; skipped if the Bicep CLI is absent).
 
 ```bash
 dotnet test
@@ -114,6 +135,8 @@ src/
 tests/
   WebApiPlayground.Tests           unit tests
   WebApiPlayground.IntegrationTests Testcontainers-based integration tests
+  WebApiPlayground.IacTests        Bicep→ARM infrastructure unit tests
 database/                          SQL project (DACPAC) — schema as code
+infra/                             Bicep IaC (Azure Key Vault) — infra as code
 .azure/ · .github/                 CI/CD on Azure DevOps and GitHub Actions
 ```

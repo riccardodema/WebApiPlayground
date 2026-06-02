@@ -1,0 +1,33 @@
+# PSRule for Azure — validazione best-practice dell'infrastruttura Bicep.
+# Docs: https://azure.github.io/PSRule.Rules.Azure/
+#
+# PSRule espande automaticamente i file .bicep e .bicepparam in ARM e applica
+# centinaia di regole (KV: RBAC, soft-delete, purge protection, network, ecc.).
+# Richiede la Bicep CLI installata per l'espansione.
+
+requires:
+  PSRule.Rules.Azure: '>=1.39.0'
+
+include:
+  module:
+    - PSRule.Rules.Azure
+
+configuration:
+  # Espandi i sorgenti Bicep/param in ARM prima di valutare le regole.
+  AZURE_BICEP_FILE_EXPANSION: true
+  AZURE_BICEP_PARAMS_FILE_EXPANSION: true
+  AZURE_BICEP_FILE_EXPANSION_TIMEOUT: 30
+
+input:
+  pathIgnore:
+    - '**/*.md'
+    - '**/*.sh'
+    - '**/*.json' # bicepconfig.json non è un template ARM
+
+output:
+  culture:
+    - 'en-US'
+
+rule:
+  # Baseline raccomandata: regole GA in stato stabile.
+  baseline: Azure.Default

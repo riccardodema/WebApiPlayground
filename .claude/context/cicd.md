@@ -20,6 +20,7 @@
 | `pr-validation.yml` | Apertura/aggiornamento PR verso `main` | Gate obbligatorio prima del merge |
 | `ci.yml` | Push/merge su `main` | Produce artifact versionati pronti al deploy |
 | `cd.yml` | Manuale o automatico dopo CI | Pubblica il DACPAC (schema DB) e deploya su App Service |
+| `infra.yml` | PR/push su `main` che tocca `infra/**` | IaC Bicep: stage Validate (build/lint + PSRule) → stage Deploy (what-if → `az deployment sub create`). Vedi `.claude/context/iac.md` |
 
 ---
 

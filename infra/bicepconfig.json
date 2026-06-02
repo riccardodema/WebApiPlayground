@@ -1,0 +1,21 @@
+{
+  "$schema": "https://aka.ms/bicep/config-schema",
+  "analyzers": {
+    "core": {
+      "enabled": true,
+      "verbose": false,
+      "rules": {
+        "no-hardcoded-env-urls": { "level": "error" },
+        "secure-parameter-default": { "level": "error" },
+        "outputs-should-not-contain-secrets": { "level": "error" },
+        "secure-secrets-in-params": { "level": "error" },
+        "no-unused-params": { "level": "warning" },
+        "no-unused-vars": { "level": "warning" },
+        "prefer-interpolation": { "level": "warning" },
+        "use-recent-api-versions": { "level": "warning" },
+        "use-resource-symbol-reference": { "level": "warning" },
+        "explicit-values-for-loc-params": { "level": "off" }
+      }
+    }
+  }
+}
