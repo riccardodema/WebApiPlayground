@@ -30,7 +30,8 @@ tests/WebApiPlayground.IacTests/   # unit test xUnit: compila il Bicep in ARM e 
    Run locale: `./infra/tests/install-bicep.sh` (scarica `.tools/bicep`, gitignored) poi `dotnet test`.
    Discovery CLI: `BICEP_CLI_PATH` → `.tools/bicep` → `~/.azure/bin/bicep` → PATH.
 2. **PSRule for Azure** (`tests/ps-rule.yaml`) — regole best-practice generiche, baseline
-   `Azure.Default`, **nessuna esclusione** (monitoring copre `Azure.KeyVault.Logs`).
+   `Azure.Default`. Monitoring copre `Azure.KeyVault.Logs`; unica esclusione documentata
+   `Azure.Log.Replication` (DR cross-region del workspace, fuori scopo non-live).
 
 Equivalente "integration" = `what-if` (richiede subscription reale, gated nel deploy).
 Entrambi girano nei workflow `infra` (GH + ADO).

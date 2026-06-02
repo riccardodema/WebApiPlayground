@@ -33,6 +33,11 @@ output:
 
 rule:
   # Baseline raccomandata: regole GA in stato stabile.
-  # Nessuna esclusione: tutte le regole del baseline Azure.Default sono soddisfatte
-  # (Azure.KeyVault.Logs è ora coperta dal modulo monitoring + diagnostic settings).
   baseline: Azure.Default
+  exclude:
+    # Azure.Log.Replication — richiede la replica cross-region del Log Analytics
+    # workspace (disaster recovery con regione secondaria e costi raddoppiati di
+    # ingestione). È una scelta di availability "di scala", fuori scopo per questa
+    # foundation/portfolio non-live. Tutte le altre regole (incl. Azure.KeyVault.Logs,
+    # ora coperta dalle diagnostic settings) sono soddisfatte.
+    - Azure.Log.Replication

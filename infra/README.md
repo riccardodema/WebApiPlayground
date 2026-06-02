@@ -106,8 +106,10 @@ Il test cerca la Bicep CLI in quest'ordine: variabile `BICEP_CLI_PATH` → `.too
 
 [PSRule for Azure](https://azure.github.io/PSRule.Rules.Azure/) espande i Bicep in ARM e applica
 centinaia di regole best-practice **generiche** (baseline `Azure.Default`). Complementare agli
-unit test sopra. **Nessuna esclusione**: il baseline `Azure.Default` passa per intero (anche
-`Azure.KeyVault.Logs`, ora coperta dal modulo monitoring — vedi [docs/monitoring.md](docs/monitoring.md)).
+unit test sopra. `Azure.KeyVault.Logs` è ora soddisfatta dal modulo monitoring (vedi
+[docs/monitoring.md](docs/monitoring.md)). Unica esclusione documentata: `Azure.Log.Replication`
+(replica cross-region del workspace = disaster recovery di scala, fuori scopo per un ambiente
+non-live — vedi `tests/ps-rule.yaml`).
 
 ```powershell
 Install-Module PSRule.Rules.Azure -Scope CurrentUser   # richiede PowerShell

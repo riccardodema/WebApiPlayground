@@ -120,8 +120,9 @@ AzureDiagnostics
 - `tests/WebApiPlayground.IacTests` — `MonitoringModuleTests` (il workspace è `PerGB2018`,
   retention configurabile, nome deterministico) e `KeyVaultModuleTests.Audit_diagnostics_*`
   (le diagnostic settings inviano `audit` al workspace, in modo condizionale).
-- **PSRule for Azure** — con il monitoring attivo, `Azure.KeyVault.Logs` passa: nessuna
-  esclusione in `tests/ps-rule.yaml`.
+- **PSRule for Azure** — con il monitoring attivo, `Azure.KeyVault.Logs` passa. Resta una sola
+  esclusione documentata, `Azure.Log.Replication` (replica cross-region del workspace = DR di
+  scala, fuori scopo per un ambiente non-live).
 
 ## Glossario rapido
 
