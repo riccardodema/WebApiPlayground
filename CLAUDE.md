@@ -12,6 +12,7 @@
 | Errori ricorrenti o approcci da evitare | `.claude/lessons.md` |
 | Aggiungere logging a un layer / nuova risorsa | `.claude/context/logging.md` |
 | Capire livelli, named properties, regole Serilog | `.claude/context/logging.md` |
+| Configurare/capire pipeline CI/CD Azure DevOps | `.claude/context/cicd.md` |
 
 ## Quick reference
 
