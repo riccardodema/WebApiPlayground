@@ -6,9 +6,10 @@ name: PR Validation
 on:
   pull_request:
     branches: [ main ]
-    paths-ignore:
-      - '**/*.md'
-      - '.claude/**'
+    # NB: no paths-ignore here. This workflow is a REQUIRED status check on `main`.
+    # If it were skipped for docs-only PRs, the required check would never be
+    # reported and those PRs could never be merged (branch-protection deadlock).
+    # It must therefore run on every PR.
 
 permissions:
   contents: read
