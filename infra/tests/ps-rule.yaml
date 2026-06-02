@@ -13,8 +13,11 @@ include:
     - PSRule.Rules.Azure
 
 configuration:
-  # Espandi i sorgenti Bicep/param in ARM prima di valutare le regole.
-  AZURE_BICEP_FILE_EXPANSION: true
+  # Espandi SOLO i .bicepparam (le unità realmente deployabili: ognuno fissa tutti
+  # i parametri di main.bicep). NON espandere i .bicep grezzi: main.bicep ha
+  # parametri required senza default e i file in modules/ sono moduli, non entry
+  # point → l'espansione standalone fallirebbe.
+  AZURE_BICEP_FILE_EXPANSION: false
   AZURE_BICEP_PARAMS_FILE_EXPANSION: true
   AZURE_BICEP_FILE_EXPANSION_TIMEOUT: 30
 
