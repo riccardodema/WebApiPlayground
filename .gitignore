@@ -419,3 +419,6 @@ ASALocalRun/
 # La validazione usa `--stdout`, quindi non si committano ARM compilati né report.
 infra/**/*.arm.json
 infra/reports/
+
+# Tool locali (es. binario Bicep scaricato da infra/tests/install-bicep.sh)
+.tools/

@@ -25,7 +25,10 @@ tests/WebApiPlayground.IacTests/   # unit test xUnit: compila il Bicep in ARM e 
    e asserisce le scelte specifiche (RBAC, soft-delete 90gg, purge protection mai `false`, nome
    KV ≤24, nessun secret, role assignment condizionali/deterministici). Si SKIPpa se la Bicep CLI
    manca (`Xunit.SkippableFact`). `dotnet test tests/WebApiPlayground.IacTests/...`.
+   Run locale: `./infra/tests/install-bicep.sh` (scarica `.tools/bicep`, gitignored) poi `dotnet test`.
+   Discovery CLI: `BICEP_CLI_PATH` → `.tools/bicep` → `~/.azure/bin/bicep` → PATH.
 2. **PSRule for Azure** (`tests/ps-rule.yaml`) — regole best-practice generiche, baseline `Azure.Default`.
+   Unica esclusione documentata: `Azure.KeyVault.Logs` (diagnostica = modulo monitoring futuro).
 
 Equivalente "integration" = `what-if` (richiede subscription reale, gated nel deploy).
 Entrambi girano nei workflow `infra` (GH + ADO).
@@ -36,8 +39,10 @@ Entrambi girano nei workflow `infra` (GH + ADO).
   con `scope: <rg>`.
 - **RBAC, non access policies**: `enableRbacAuthorization: true`. Gli accessi sono
   `roleAssignments` con `name: guid(...)` deterministico (idempotenti, mai duplicati).
-- **Purge protection solo in prod**: `enablePurgeProtection: environmentName == 'prod'`.
-  Mai impostare `false` esplicito → una volta attiva non si disabilita (usare `null`).
+- **Purge protection sempre attiva**: `enablePurgeProtection: true` in tutti gli ambienti
+  (best practice). Mai impostare `false` esplicito → una volta attiva non si disabilita (usare `null`).
+- **Firewall default-deny**: `networkAcls.defaultAction = 'Deny'` + bypass `AzureServices`;
+  IP/CIDR ammessi via parametro `allowedIpAddresses` (o Private Endpoint).
 - **Nessun secret nell'IaC**: si crea solo il vault + RBAC. Il valore della connection
   string si imposta fuori (`az keyvault secret set`). Nessun segreto transita per ARM.
 - **Naming KV**: globale-unico ≤24 char, `take('kv-${workload}-${env}-${take(uniqueString(sub,rg),6)}', 24)`.

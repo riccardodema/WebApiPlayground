@@ -29,7 +29,8 @@ infra/
 |---|---|
 | **Scope = subscription** | `main.bicep` crea anche il **resource group**: anche il RG è codice/tracciato. |
 | **RBAC authorization** (`enableRbacAuthorization: true`) | Niente access policies legacy: accessi gestiti via Azure RBAC, auditabili e centralizzati. |
-| **Soft-delete + purge protection** | Soft-delete 90gg sempre; purge protection **solo in prod** (in dev resta off per poter ricreare/eliminare il vault liberamente). |
+| **Soft-delete + purge protection** | Soft-delete 90gg e **purge protection sempre attiva** (protegge i secret da cancellazioni definitive). Una volta attiva non è disabilitabile. |
+| **Firewall default-deny** | `networkAcls.defaultAction = 'Deny'` + bypass per i servizi Azure trusted. Aggiungi IP/CIDR con il parametro `allowedIpAddresses` (o un Private Endpoint) per l'accesso amministrativo. |
 | **Nessun secret nell'IaC** | L'IaC crea solo il vault e gli accessi RBAC. Il **valore** della connection string è impostato fuori dall'IaC → nessun segreto transita per i deployment ARM né finisce nel repo. |
 | **Naming deterministico** | Nome KV globale-unico ≤24 char con token da `uniqueString(sub, rg)`: stesso input → stesso nome → idempotente. |
 
@@ -80,20 +81,28 @@ che richiede una subscription reale ed è gated nella pipeline di deploy):
 ### 1. Unit test xUnit — `tests/WebApiPlayground.IacTests`
 
 Compilano i template Bicep in ARM e asseriscono le scelte **specifiche** di questo progetto
-(RBAC abilitato, soft-delete 90gg, purge protection mai hardcoded a `false`, nome KV ≤24 char,
-nessun secret creato dall'IaC, role assignment condizionali e deterministici). Stesso stack del
-resto del repo (xUnit + `dotnet test`).
+(RBAC abilitato, soft-delete 90gg, purge protection mai hardcoded a `false`, firewall default-deny,
+nome KV ≤24 char, nessun secret creato dall'IaC, role assignment condizionali e deterministici).
+Stesso stack del resto del repo (xUnit + `dotnet test`).
+
+**Eseguirli in locale** — serve la Bicep CLI. Il modo più semplice (nessun Azure CLI, nessun
+PATH da toccare): scaricala una volta nella cartella locale del repo, poi `dotnet test`:
 
 ```bash
-# Richiede la Bicep CLI ('bicep' o 'az bicep'); senza, i test si SKIPpano (non falliscono).
+./infra/tests/install-bicep.sh    # scarica .tools/bicep (gitignored); il test la trova da solo
 dotnet test tests/WebApiPlayground.IacTests/WebApiPlayground.IacTests.csproj
 ```
+
+Il test cerca la Bicep CLI in quest'ordine: variabile `BICEP_CLI_PATH` → `.tools/bicep` →
+`~/.azure/bin/bicep` (da `az bicep install`) → `bicep`/`az` sul PATH. Se non la trova, i test si
+**SKIPpano** (non falliscono).
 
 ### 2. PSRule for Azure — `tests/ps-rule.yaml`
 
 [PSRule for Azure](https://azure.github.io/PSRule.Rules.Azure/) espande i Bicep in ARM e applica
 centinaia di regole best-practice **generiche** (baseline `Azure.Default`). Complementare agli
-unit test sopra.
+unit test sopra. Unica esclusione documentata: `Azure.KeyVault.Logs` (le diagnostic settings
+verso un Log Analytics workspace saranno un modulo monitoring dedicato — vedi `tests/ps-rule.yaml`).
 
 ```powershell
 Install-Module PSRule.Rules.Azure -Scope CurrentUser   # richiede PowerShell
@@ -130,6 +139,9 @@ az keyvault secret set \
   --name Sql-ConnectionString \
   --value 'Server=tcp:...;Authentication=Active Directory Default;Database=...;'
 ```
+
+> Il firewall è **default-deny**: per scrivere il secret devi essere su un IP consentito
+> (`allowedIpAddresses`), dietro un Private Endpoint, o eseguire da un contesto Azure trusted.
 
 ## Integrazione con l'App Service (passo successivo)
 

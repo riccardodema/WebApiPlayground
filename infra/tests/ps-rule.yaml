@@ -31,3 +31,10 @@ output:
 rule:
   # Baseline raccomandata: regole GA in stato stabile.
   baseline: Azure.Default
+  # Esclusioni motivate (deferral consapevoli a questo stadio "foundation"):
+  exclude:
+    # Azure.KeyVault.Logs — richiede diagnostic settings verso un Log Analytics
+    # workspace, che non fa parte di questa foundation: monitoring/diagnostica
+    # saranno un modulo dedicato. Tutte le altre regole KV (RBAC, soft-delete,
+    # purge protection, firewall) sono invece soddisfatte dal Bicep.
+    - Azure.KeyVault.Logs

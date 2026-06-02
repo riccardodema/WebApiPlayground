@@ -39,6 +39,9 @@ param appPrincipalId string = ''
 @description('Abilita la purge protection. Una volta attiva NON è più disattivabile.')
 param enablePurgeProtection bool = true
 
+@description('IP/CIDR consentiti dal firewall del Key Vault (vuoto = solo servizi Azure trusted + private endpoint).')
+param allowedIpAddresses array = []
+
 @allowed([
   'standard'
   'premium'
@@ -82,10 +85,16 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
     enablePurgeProtection: enablePurgeProtection ? true : null
     publicNetworkAccess: 'Enabled'
     networkAcls: {
-      // Demo: 'Allow' per semplicità. In prod stringere a 'Deny' e abilitare
-      // solo IP/subnet/Private Endpoint noti (vedi infra/README.md).
-      defaultAction: 'Allow'
+      // Default-deny: passa solo il traffico esplicitamente consentito. I servizi
+      // Azure trusted sono ammessi via bypass; aggiungi IP/CIDR con allowedIpAddresses
+      // (o un Private Endpoint) per l'accesso amministrativo. Vedi infra/README.md.
+      defaultAction: 'Deny'
       bypass: 'AzureServices'
+      ipRules: [
+        for ip in allowedIpAddresses: {
+          value: ip
+        }
+      ]
     }
   }
 }

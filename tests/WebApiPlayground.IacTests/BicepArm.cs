@@ -11,6 +11,7 @@ namespace WebApiPlayground.IacTests;
 public static class BicepArm
 {
     private static readonly string InfraDir = ResolveInfraDir();
+    private static readonly string RepoRoot = Directory.GetParent(InfraDir)!.FullName;
     private static readonly Dictionary<string, JsonDocument> Cache = new();
     private static readonly Lock Gate = new();
 
@@ -78,7 +79,26 @@ public static class BicepArm
 
     private static string? FindBicep()
     {
-        // Preferisci il binario standalone, poi l'Azure CLI.
+        var exe = OperatingSystem.IsWindows() ? "bicep.exe" : "bicep";
+
+        // 1. Override esplicito (qualunque binario bicep).
+        var configured = Environment.GetEnvironmentVariable("BICEP_CLI_PATH");
+        if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured))
+            return configured;
+
+        // 2. Binario locale del repo, scaricato da `infra/tests/install-bicep.sh`.
+        var local = Path.Combine(RepoRoot, ".tools", exe);
+        if (File.Exists(local)) return local;
+
+        // 3. Posizione standard di `az bicep install`.
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrEmpty(home))
+        {
+            var azBicep = Path.Combine(home, ".azure", "bin", exe);
+            if (File.Exists(azBicep)) return azBicep;
+        }
+
+        // 4. PATH: bicep standalone, poi l'Azure CLI (`az bicep`).
         return ExecutableOnPath("bicep") ?? ExecutableOnPath("az");
     }
 

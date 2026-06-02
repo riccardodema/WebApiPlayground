@@ -36,6 +36,9 @@ param adminPrincipalId string = ''
 @description('Object ID della managed identity dell\'app a cui dare "Key Vault Secrets User". Vuoto = skip (assegnabile dopo, quando l\'App Service esiste).')
 param appPrincipalId string = ''
 
+@description('IP/CIDR consentiti dal firewall del Key Vault (vuoto = solo servizi Azure trusted + private endpoint).')
+param allowedIpAddresses array = []
+
 @description('Tag comuni applicati a tutte le risorse.')
 param tags object = {
   workload: workload
@@ -67,9 +70,10 @@ module keyVault 'modules/keyvault.bicep' = {
     tags: tags
     adminPrincipalId: adminPrincipalId
     appPrincipalId: appPrincipalId
-    // Purge protection obbligatoria in prod; in dev resta disattivabile per
-    // poter ricreare/eliminare il vault liberamente durante gli esperimenti.
-    enablePurgeProtection: environmentName == 'prod'
+    allowedIpAddresses: allowedIpAddresses
+    // Purge protection sempre attiva (best practice): protegge i secret da
+    // cancellazioni definitive accidentali. Una volta attiva non è disabilitabile.
+    enablePurgeProtection: true
   }
 }
 

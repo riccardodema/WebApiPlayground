@@ -55,9 +55,10 @@ public class KeyVaultModuleTests
     }
 
     [SkippableFact]
-    public void Network_acls_bypass_azure_services()
+    public void Network_acls_are_default_deny_with_azure_services_bypass()
     {
         var acls = VaultProperties().GetProperty("networkAcls");
+        Assert.Equal("Deny", acls.GetProperty("defaultAction").GetString());
         Assert.Equal("AzureServices", acls.GetProperty("bypass").GetString());
     }
 
