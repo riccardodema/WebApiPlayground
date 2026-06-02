@@ -7,6 +7,7 @@
 | Aggiungere risorsa REST | `.claude/context/architecture.md` + `.claude/context/conventions.md` |
 | Capire struttura/dipendenze | `.claude/context/architecture.md` |
 | Scrivere codice (entity/dto/service/repo/controller) | `.claude/context/conventions.md` |
+| Autenticazione/autorizzazione endpoint (Entra ID, JWT, ruoli/scope, `[Authorize]`, policy) | `.claude/context/auth.md` |
 | Package, URL, comandi dotnet/ef | `.claude/context/stack.md` |
 | Prima di usare Swagger/Swashbuckle o configurare OpenAPI | `.claude/lessons.md` |
 | Errori ricorrenti o approcci da evitare | `.claude/lessons.md` |

@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using WebApiPlayground.Api.Authorization;
 using WebApiPlayground.Application.DTOs;
 using WebApiPlayground.Application.Interfaces;
 
@@ -6,6 +8,7 @@ namespace WebApiPlayground.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class BooksController : ControllerBase
 {
     private readonly IBooksService _booksService;
@@ -20,6 +23,7 @@ public class BooksController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Policy = AuthorizationPolicies.ReadBooks)]
     public async Task<IActionResult> GetBooks()
     {
         _logger.LogInformation("Fetching all books");
@@ -31,6 +35,7 @@ public class BooksController : ControllerBase
     }
 
     [HttpGet("{id:int}")]
+    [Authorize(Policy = AuthorizationPolicies.ReadBooks)]
     public async Task<IActionResult> GetBookById([FromRoute] int id)
     {
         _logger.LogDebug("Fetching book with ID {BookId}", id);
@@ -48,6 +53,7 @@ public class BooksController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Policy = AuthorizationPolicies.WriteBooks)]
     public async Task<IActionResult> CreateBook([FromBody] CreateBookDto dto)
     {
         _logger.LogInformation(
@@ -64,6 +70,7 @@ public class BooksController : ControllerBase
     }
 
     [HttpDelete("{id:int}")]
+    [Authorize(Policy = AuthorizationPolicies.WriteBooks)]
     public async Task<IActionResult> DeleteBook([FromRoute] int id)
     {
         _logger.LogInformation("Deleting book with ID {BookId}", id);
