@@ -9,6 +9,12 @@ interesting part is not the domain but the engineering around it — Clean Archi
 a versioned database, structured logging, a full test pyramid and CI/CD implemented on
 **both Azure DevOps and GitHub Actions**.
 
+> **About this project.** It's also a proof-of-concept for using **Claude as a coding
+> copilot wired into a real GitHub workflow** — protected `main` with PR-based merges,
+> MCP integrations (e.g. live SQL Server access), and CI/CD — aiming for a development
+> loop that is modern and fast yet safe and detail-oriented (multi-step checks before
+> any sensitive or irreversible action, no secrets in the repo).
+
 ## Architecture
 
 Clean Architecture, dependencies point inwards (outer layers depend on inner, never the reverse):
