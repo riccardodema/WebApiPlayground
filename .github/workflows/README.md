@@ -10,6 +10,12 @@ in `.azure/` (lo stesso progetto implementa entrambe le piattaforme).
 | `build-test.yml` | `workflow_call` (riutilizzabile) | restore + build (solution, incl. DACPAC) + unit & integration test; opzionalmente produce gli artifact `app` e `database` |
 | `pr-validation.yml` | `pull_request` → `main` | Gate PR: chiama `build-test`. Da impostare come **required check** |
 | `ci-cd.yml` | `push` → `main` / `workflow_dispatch` | `build-test` (con artifact) → job **`deploy`** gated dall'environment `production` |
+| `infra.yml` | PR/`push` → `main` su `infra/**` | IaC Bicep: job **`validate`** (build/lint + PSRule) → job **`deploy`** (what-if → `az deployment sub create`) gated dall'environment `production`. Vedi [.claude/context/iac.md](../../.claude/context/iac.md) |
+
+> **Infra deploy disabilitato finché non configuri Azure.** Il job `deploy` di `infra.yml`
+> ha `if: vars.AZURE_LOCATION != ''`: senza quella variabile è **saltato** (skipped, non
+> failed) → la CI resta verde. Riusa gli stessi secret OIDC (`AZURE_CLIENT_ID`,
+> `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`) e l'environment `production` del deploy app.
 
 > **Deploy disabilitato finché non configuri Azure.** Il job `deploy` ha
 > `if: vars.AZURE_WEBAPP_NAME != ''`: senza quella variabile viene **saltato**

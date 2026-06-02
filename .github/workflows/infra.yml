@@ -1,0 +1,125 @@
+# Infrastructure as Code (Bicep) — validate on PR, what-if + deploy on main.
+#
+# Mirror del concetto delle pipeline app: gate di validazione su ogni PR che tocca
+# `infra/**`, e deploy idempotente su `main` gated dall'environment `production`.
+#
+# Auth Azure via OIDC (federated credentials) — nessun secret long-lived nel repo.
+#
+# Required configuration (Environment `production`):
+#   Secrets:   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID  (OIDC)
+#   Variables: AZURE_LOCATION   (es. 'westeurope') — funge anche da GATE: senza
+#              questa variabile il job `deploy` viene SALTATO (skipped, non failed).
+name: Infra
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'infra/**'
+      - '.github/workflows/infra.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'infra/**'
+      - '.github/workflows/infra.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Validazione: gira sempre, NON richiede Azure.
+  # Compila/linta il Bicep e applica le regole best-practice di PSRule for Azure.
+  # ---------------------------------------------------------------------------
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Bicep CLI
+        run: az bicep install
+
+      - name: Bicep build + lint
+        run: |
+          az bicep build --file infra/main.bicep --stdout > /dev/null
+          az bicep build-params --file infra/main.dev.bicepparam --stdout > /dev/null
+          az bicep build-params --file infra/main.prod.bicepparam --stdout > /dev/null
+
+      # Unit test xUnit: compilano il Bicep in ARM e asseriscono security posture
+      # e idempotenza (no Azure, no Docker). Usano `az bicep` per la compilazione.
+      - name: IaC unit tests (xUnit)
+        run: >
+          dotnet test tests/WebApiPlayground.IacTests/WebApiPlayground.IacTests.csproj
+          --logger "trx;LogFileName=iac.trx"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: iac-test-results
+          path: TestResults/**/*.trx
+          if-no-files-found: ignore
+
+      - name: PSRule for Azure
+        uses: microsoft/ps-rule@v2.9.0
+        with:
+          modules: PSRule.Rules.Azure
+          inputPath: infra/
+          option: infra/tests/ps-rule.yaml
+          outputFormat: Sarif
+          outputPath: infra/reports/ps-rule.sarif
+
+  # ---------------------------------------------------------------------------
+  # Deploy: what-if (anteprima) poi create (idempotente).
+  # Gated dall'environment `production` (approval) e dalla variabile AZURE_LOCATION:
+  # senza di essa il job è SKIPPED → CI verde, zero chiamate ad Azure.
+  # ---------------------------------------------------------------------------
+  deploy:
+    needs: validate
+    if: ${{ github.event_name != 'pull_request' && vars.AZURE_LOCATION != '' }}
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write   # OIDC login
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Anteprima del diff PRIMA di applicare: equivalente IaC del review del DACPAC.
+      - name: What-if (preview)
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            az deployment sub what-if \
+              --location "${{ vars.AZURE_LOCATION }}" \
+              --template-file infra/main.bicep \
+              --parameters infra/main.prod.bicepparam
+
+      # Idempotente: riapplicare lo stesso stato è un no-op.
+      - name: Deploy (az deployment sub create)
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            az deployment sub create \
+              --name "webapiplay-prod-${{ github.run_id }}" \
+              --location "${{ vars.AZURE_LOCATION }}" \
+              --template-file infra/main.bicep \
+              --parameters infra/main.prod.bicepparam
