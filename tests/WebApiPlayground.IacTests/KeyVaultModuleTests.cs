@@ -91,6 +91,19 @@ public class KeyVaultModuleTests
     }
 
     [SkippableFact]
+    public void Audit_diagnostics_are_sent_to_log_analytics_when_a_workspace_is_provided()
+    {
+        var diagnostics = BicepArm.Resources(Template(), "Microsoft.Insights/diagnosticSettings").Single();
+        // Condizionale: creata solo se è fornito un workspace.
+        Assert.StartsWith("[not(empty(", diagnostics.GetProperty("condition").GetString());
+
+        var logs = diagnostics.GetProperty("properties").GetProperty("logs").EnumerateArray().ToList();
+        Assert.Contains(logs, l =>
+            l.GetProperty("categoryGroup").GetString() == "audit" &&
+            l.GetProperty("enabled").GetBoolean());
+    }
+
+    [SkippableFact]
     public void Role_assignments_are_conditional_and_deterministic()
     {
         var template = Template();

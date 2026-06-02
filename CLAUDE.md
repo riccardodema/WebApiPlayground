@@ -15,6 +15,7 @@
 | Configurare/capire pipeline CI/CD Azure DevOps | `.claude/context/cicd.md` |
 | Configurare/capire CI/CD GitHub Actions | `.github/workflows/README.md` |
 | Infrastruttura Azure (IaC/Bicep), Key Vault, what-if, deploy | `.claude/context/iac.md` + `infra/README.md` |
+| Monitoring/diagnostics del Key Vault (audit log, Log Analytics, KQL) | `infra/docs/monitoring.md` |
 | Schema DB versionato, SQL project, DACPAC, deploy/seed | `.claude/context/database.md` |
 | Modificare tabelle/schema o allineare entità EF al DB | `.claude/context/database.md` + `.claude/context/conventions.md` |
 

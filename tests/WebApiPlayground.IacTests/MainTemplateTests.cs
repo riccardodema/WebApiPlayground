@@ -33,4 +33,13 @@ public class MainTemplateTests
         var deployments = BicepArm.Resources(Template(), "Microsoft.Resources/deployments");
         Assert.Contains(deployments, d => d.GetProperty("name").GetString() == "keyvault");
     }
+
+    [SkippableFact]
+    public void Main_provisions_monitoring_when_enabled()
+    {
+        var monitoring = BicepArm.Resources(Template(), "Microsoft.Resources/deployments")
+            .Single(d => d.GetProperty("name").GetString() == "monitoring");
+        // Condizionale sul flag enableMonitoring (toggle per azzerare i costi).
+        Assert.Contains("parameters('enableMonitoring')", monitoring.GetProperty("condition").GetString());
+    }
 }

@@ -39,6 +39,14 @@ param appPrincipalId string = ''
 @description('IP/CIDR consentiti dal firewall del Key Vault (vuoto = solo servizi Azure trusted + private endpoint).')
 param allowedIpAddresses array = []
 
+@description('Crea un Log Analytics workspace e invia gli audit log del Key Vault. Best practice: lasciare true. Imposta false per non creare risorse di monitoring (es. per azzerare i costi su un ambiente non-live).')
+param enableMonitoring bool = true
+
+@minValue(30)
+@maxValue(730)
+@description('Giorni di retention dei log nel workspace (se enableMonitoring).')
+param logRetentionInDays int = 30
+
 @description('Tag comuni applicati a tutte le risorse.')
 param tags object = {
   workload: workload
@@ -60,6 +68,18 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2024-11-01' = {
 // Moduli
 // -----------------------------------------------------------------------------
 
+module monitoring 'modules/monitoring.bicep' = if (enableMonitoring) {
+  scope: resourceGroup
+  name: 'monitoring'
+  params: {
+    workload: workload
+    environmentName: environmentName
+    location: location
+    tags: tags
+    retentionInDays: logRetentionInDays
+  }
+}
+
 module keyVault 'modules/keyvault.bicep' = {
   scope: resourceGroup
   name: 'keyvault'
@@ -71,6 +91,8 @@ module keyVault 'modules/keyvault.bicep' = {
     adminPrincipalId: adminPrincipalId
     appPrincipalId: appPrincipalId
     allowedIpAddresses: allowedIpAddresses
+    // Invia gli audit log al workspace se il monitoring è attivo.
+    diagnosticsWorkspaceId: enableMonitoring ? monitoring!.outputs.id : ''
     // Purge protection sempre attiva (best practice): protegge i secret da
     // cancellazioni definitive accidentali. Una volta attiva non è disabilitabile.
     enablePurgeProtection: true
