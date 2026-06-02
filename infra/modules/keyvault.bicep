@@ -42,6 +42,9 @@ param enablePurgeProtection bool = true
 @description('IP/CIDR consentiti dal firewall del Key Vault (vuoto = solo servizi Azure trusted + private endpoint).')
 param allowedIpAddresses array = []
 
+@description('Resource ID del Log Analytics workspace su cui inviare gli audit log. Vuoto = nessuna diagnostica (le diagnostic settings non vengono create).')
+param diagnosticsWorkspaceId string = ''
+
 @allowed([
   'standard'
   'premium'
@@ -122,6 +125,34 @@ resource appRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' 
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleIds.keyVaultSecretsUser)
     principalId: appPrincipalId
     principalType: 'ServicePrincipal'
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Diagnostica: invia gli AuditEvent (ogni accesso a secret/chiavi) al workspace.
+// Condizionale: creata solo se è fornito un workspace. Vedi infra/docs/monitoring.md.
+// -----------------------------------------------------------------------------
+// Questa è l'API più recente di diagnosticSettings che supporta `categoryGroup`
+// (le GA più vecchie accettano solo `category` puntuali) → manteniamo la preview.
+#disable-next-line use-recent-api-versions
+resource diagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(diagnosticsWorkspaceId)) {
+  name: 'audit-to-log-analytics'
+  scope: keyVault
+  properties: {
+    workspaceId: diagnosticsWorkspaceId
+    logs: [
+      {
+        // 'audit' = AuditEvent: chi/quando/cosa/esito per ogni accesso ai secret.
+        categoryGroup: 'audit'
+        enabled: true
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
   }
 }
 

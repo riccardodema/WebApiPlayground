@@ -16,9 +16,13 @@ infra/
 ├── main.dev.bicepparam        # parametri ambiente dev
 ├── main.prod.bicepparam       # parametri ambiente prod
 ├── modules/
-│   └── keyvault.bicep         # Key Vault (RBAC, soft-delete, purge protection, RBAC role assignments)
+│   ├── keyvault.bicep         # Key Vault (RBAC, soft-delete, purge protection, firewall, diagnostics)
+│   └── monitoring.bicep       # Log Analytics workspace (destinazione degli audit log)
+├── docs/
+│   └── monitoring.md          # guida: a cosa serve il monitoring/diagnostics del Key Vault
 ├── tests/
-│   └── ps-rule.yaml           # config PSRule for Azure (asserzioni best-practice)
+│   ├── ps-rule.yaml           # config PSRule for Azure (asserzioni best-practice)
+│   └── install-bicep.sh       # scarica la Bicep CLI in .tools/ per i test locali
 ├── bicepconfig.json           # regole del linter Bicep
 └── deploy.sh                  # wrapper locale: build/lint → what-if (default) | deploy
 ```
@@ -32,6 +36,7 @@ infra/
 | **Soft-delete + purge protection** | Soft-delete 90gg e **purge protection sempre attiva** (protegge i secret da cancellazioni definitive). Una volta attiva non è disabilitabile. |
 | **Firewall default-deny** | `networkAcls.defaultAction = 'Deny'` + bypass per i servizi Azure trusted. Aggiungi IP/CIDR con il parametro `allowedIpAddresses` (o un Private Endpoint) per l'accesso amministrativo. |
 | **Nessun secret nell'IaC** | L'IaC crea solo il vault e gli accessi RBAC. Il **valore** della connection string è impostato fuori dall'IaC → nessun segreto transita per i deployment ARM né finisce nel repo. |
+| **Monitoring/audit attivo** | Un Log Analytics workspace + diagnostic settings inviano gli **AuditEvent** del vault (chi accede ai secret). Attivo di default (`enableMonitoring`), spegnibile per azzerare i costi. Vedi [docs/monitoring.md](docs/monitoring.md). |
 | **Naming deterministico** | Nome KV globale-unico ≤24 char con token da `uniqueString(sub, rg)`: stesso input → stesso nome → idempotente. |
 
 ## Prerequisiti
@@ -101,8 +106,8 @@ Il test cerca la Bicep CLI in quest'ordine: variabile `BICEP_CLI_PATH` → `.too
 
 [PSRule for Azure](https://azure.github.io/PSRule.Rules.Azure/) espande i Bicep in ARM e applica
 centinaia di regole best-practice **generiche** (baseline `Azure.Default`). Complementare agli
-unit test sopra. Unica esclusione documentata: `Azure.KeyVault.Logs` (le diagnostic settings
-verso un Log Analytics workspace saranno un modulo monitoring dedicato — vedi `tests/ps-rule.yaml`).
+unit test sopra. **Nessuna esclusione**: il baseline `Azure.Default` passa per intero (anche
+`Azure.KeyVault.Logs`, ora coperta dal modulo monitoring — vedi [docs/monitoring.md](docs/monitoring.md)).
 
 ```powershell
 Install-Module PSRule.Rules.Azure -Scope CurrentUser   # richiede PowerShell

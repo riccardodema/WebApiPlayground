@@ -11,7 +11,9 @@ infra/
 ├── main.bicep              # entry point, targetScope='subscription' (crea RG + invoca moduli)
 ├── main.dev.bicepparam     # param ambiente dev
 ├── main.prod.bicepparam    # param ambiente prod
-├── modules/keyvault.bicep  # Key Vault (RBAC, soft-delete, purge, role assignments condizionali)
+├── modules/keyvault.bicep  # Key Vault (RBAC, soft-delete, purge, firewall, diagnostics)
+├── modules/monitoring.bicep # Log Analytics workspace (audit log destination)
+├── docs/monitoring.md      # guida didattica monitoring/diagnostics
 ├── tests/ps-rule.yaml      # PSRule for Azure (baseline Azure.Default)
 ├── bicepconfig.json        # regole linter
 └── deploy.sh               # wrapper: whatif (default) | deploy
@@ -27,8 +29,8 @@ tests/WebApiPlayground.IacTests/   # unit test xUnit: compila il Bicep in ARM e 
    manca (`Xunit.SkippableFact`). `dotnet test tests/WebApiPlayground.IacTests/...`.
    Run locale: `./infra/tests/install-bicep.sh` (scarica `.tools/bicep`, gitignored) poi `dotnet test`.
    Discovery CLI: `BICEP_CLI_PATH` → `.tools/bicep` → `~/.azure/bin/bicep` → PATH.
-2. **PSRule for Azure** (`tests/ps-rule.yaml`) — regole best-practice generiche, baseline `Azure.Default`.
-   Unica esclusione documentata: `Azure.KeyVault.Logs` (diagnostica = modulo monitoring futuro).
+2. **PSRule for Azure** (`tests/ps-rule.yaml`) — regole best-practice generiche, baseline
+   `Azure.Default`, **nessuna esclusione** (monitoring copre `Azure.KeyVault.Logs`).
 
 Equivalente "integration" = `what-if` (richiede subscription reale, gated nel deploy).
 Entrambi girano nei workflow `infra` (GH + ADO).
@@ -45,6 +47,9 @@ Entrambi girano nei workflow `infra` (GH + ADO).
   IP/CIDR ammessi via parametro `allowedIpAddresses` (o Private Endpoint).
 - **Nessun secret nell'IaC**: si crea solo il vault + RBAC. Il valore della connection
   string si imposta fuori (`az keyvault secret set`). Nessun segreto transita per ARM.
+- **Monitoring**: modulo `monitoring.bicep` (Log Analytics) + diagnostic settings sul KV
+  (`categoryGroup audit`). Attivo di default (`enableMonitoring`), condizionale. Copre la
+  regola PSRule `Azure.KeyVault.Logs`. Dettagli e KQL in `docs/monitoring.md`.
 - **Naming KV**: globale-unico ≤24 char, `take('kv-${workload}-${env}-${take(uniqueString(sub,rg),6)}', 24)`.
 - **what-if obbligatorio** prima di `deploy` (anteprima del diff). `deploy.sh` default = `whatif`.
 
