@@ -90,6 +90,13 @@ dotnet run --project src/WebApiPlayground.Api/WebApiPlayground.Api.csproj
 # OpenAPI doc: http://localhost:5242/openapi/v1.json
 ```
 
+## Development workflow
+
+`main` is protected: no direct pushes, changes land via pull request, and a PR can
+only be merged after the **PR Validation** check (`validate / build-test`) is green
+and the branch is up to date. History is kept linear (squash/rebase), force-pushes
+and branch deletion are disabled.
+
 ## Repository layout
 
 ```
