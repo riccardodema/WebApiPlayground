@@ -18,6 +18,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\WebApiPlayground.Api\WebApiPlayground.Api.csproj" />
     <ProjectReference Include="..\..\src\WebApiPlayground.Application\WebApiPlayground.Application.csproj" />
     <ProjectReference Include="..\..\src\WebApiPlayground.Domain\WebApiPlayground.Domain.csproj" />
   </ItemGroup>

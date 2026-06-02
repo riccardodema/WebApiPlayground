@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -23,7 +24,32 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
 
             services.AddDbContext<PlaygroundDbContext>(options =>
                 options.UseSqlServer(_sqlContainer.GetConnectionString()));
+
+            // Sostituisce il JWT Bearer Entra ID con uno schema di test impostato come default:
+            // i test non richiedono un tenant reale e simulano i claim via header.
+            services
+                .AddAuthentication(TestAuthHandler.SchemeName)
+                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
         });
+    }
+
+    /// <summary>Client anonimo: nessun header di auth → 401.</summary>
+    public HttpClient CreateAnonymousClient() => CreateClient();
+
+    /// <summary>Client con token delegato (claim <c>scp</c>): es. "Books.Read" o "Books.ReadWrite".</summary>
+    public HttpClient CreateClientWithScope(string scope)
+    {
+        var client = CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.ScopeHeader, scope);
+        return client;
+    }
+
+    /// <summary>Client con app permission (claim <c>roles</c>): es. "Books.Read.All" o "Books.ReadWrite.All".</summary>
+    public HttpClient CreateClientWithAppRoles(string roles)
+    {
+        var client = CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, roles);
+        return client;
     }
 
     public async Task InitializeAsync()

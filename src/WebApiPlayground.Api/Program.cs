@@ -1,6 +1,8 @@
 using Scalar.AspNetCore;
 using Serilog;
+using WebApiPlayground.Api.Extensions;
 using WebApiPlayground.Api.Middleware;
+using WebApiPlayground.Api.OpenApi;
 using WebApiPlayground.Application;
 using WebApiPlayground.Infrastructure;
 
@@ -19,10 +21,14 @@ try
         .ReadFrom.Services(services));
 
     builder.Services.AddControllers();
-    builder.Services.AddOpenApi();
+    builder.Services.AddOpenApi(options =>
+        options.AddDocumentTransformer<BearerSecuritySchemeTransformer>());
 
     builder.Services.AddApplication();
     builder.Services.AddInfrastructure(builder.Configuration);
+
+    builder.Services.AddApiAuthentication(builder.Configuration);
+    builder.Services.AddApiAuthorization();
 
     var app = builder.Build();
 
@@ -43,6 +49,7 @@ try
     if (!app.Environment.IsDevelopment())
         app.UseHttpsRedirection();
 
+    app.UseAuthentication();
     app.UseAuthorization();
     app.MapControllers();
 
