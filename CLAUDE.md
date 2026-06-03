@@ -11,6 +11,7 @@
 | Paginare/ordinare un endpoint GET lista (`PagedResult<T>`, page/size, sort) | `.claude/context/conventions.md` (sez. Paginazione) + `.claude/lessons.md` [L07] |
 | Autenticazione/autorizzazione endpoint (Entra ID, JWT, ruoli/scope, `[Authorize]`, policy) | `.claude/context/auth.md` |
 | Errori/eccezioni → risposta HTTP (ProblemDetails RFC 7807, exception handler, 500, correlationId nel body) | `.claude/context/error-handling.md` |
+| Validazione input (FluentValidation, 400 ProblemDetails con `errors`, messaggi parlanti, regole nello schema OpenAPI) | `.claude/context/validation.md` + `.claude/lessons.md` [L10] |
 | Health check / probe liveness-readiness (`/health/live`, `/health/ready`, probe DB, orchestratore) | `.claude/context/health-checks.md` |
 | Package, URL, comandi dotnet/ef | `.claude/context/stack.md` |
 | Prima di usare Swagger/Swashbuckle o configurare OpenAPI | `.claude/lessons.md` |

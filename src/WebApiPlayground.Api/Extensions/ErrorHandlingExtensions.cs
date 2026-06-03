@@ -1,6 +1,4 @@
-using System.Diagnostics;
 using WebApiPlayground.Api.ErrorHandling;
-using WebApiPlayground.Api.Middleware;
 
 namespace WebApiPlayground.Api.Extensions;
 
@@ -12,20 +10,12 @@ public static class ErrorHandlingExtensions
 {
     public static IServiceCollection AddApiProblemDetails(this IServiceCollection services)
     {
-        // Arricchisce OGNI ProblemDetails con correlationId + traceId: punto unico, così
-        // l'errore restituito al client è correlabile ai log (CorrelationId) e alle trace.
+        // Arricchisce OGNI ProblemDetails che passa per IProblemDetailsService con
+        // correlationId + traceId. Il canale di validazione 400 (che NON passa di qui)
+        // riusa lo stesso ProblemDetailsEnricher: punto unico di arricchimento.
         services.AddProblemDetails(options =>
             options.CustomizeProblemDetails = context =>
-            {
-                if (context.HttpContext.Items.TryGetValue(CorrelationIdMiddleware.ItemKey, out var correlationId)
-                    && correlationId is not null)
-                {
-                    context.ProblemDetails.Extensions["correlationId"] = correlationId;
-                }
-
-                context.ProblemDetails.Extensions["traceId"] =
-                    Activity.Current?.Id ?? context.HttpContext.TraceIdentifier;
-            });
+                ProblemDetailsEnricher.Enrich(context.HttpContext, context.ProblemDetails));
 
         services.AddExceptionHandler<GlobalExceptionHandler>();
 

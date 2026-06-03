@@ -32,9 +32,11 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
 - ✅ **Health checks** `/health/live` (liveness) + `/health/ready` (readiness con probe DB via
   `AddDbContextCheck`). CI/CD agganciato a `/health/ready` al posto di `/openapi/v1.json` (che in
   prod non esisteva). Vedi `.claude/context/health-checks.md`, `[L09]`.
-- ⬜ **Validation input** (FluentValidation) su `CreateBookDto` (Title non vuoto/lunghezza,
-  AuthorId > 0) + nuovo endpoint **Update (PUT)** per completare il CRUD. Errori → 400
-  ProblemDetails coerente col punto sopra.
+- ✅ **Validation input** (FluentValidation) su `CreateBookDto`/`UpdateBookDto` (Title non
+  vuoto/lunghezza ≤ 100, AuthorId > 0) + nuovo endpoint **Update (PUT)** per completare il CRUD.
+  Errori → 400 ProblemDetails con mappa `errors` e messaggi parlanti, coerente col punto sopra
+  (stesso `correlationId`/`traceId`); regole proiettate nello schema OpenAPI. Vedi
+  `.claude/context/validation.md`, `[L10]`.
 
 ## Tier 2 — Pattern moderni (differenziatori)
 

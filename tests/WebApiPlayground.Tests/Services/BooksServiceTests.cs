@@ -143,6 +143,33 @@ public class BooksServiceTests
     }
 
     [Fact]
+    public async Task UpdateBookAsync_ReturnsMappedDto_WhenBookExists()
+    {
+        var dto = new UpdateBookDto("Refactoring", 3);
+        var updatedBook = new Book { Id = 5, Title = "Refactoring", AuthorId = 3, Author = new Author { Id = 3, FullName = "Martin Fowler" } };
+        _repositoryMock
+            .Setup(r => r.UpdateAsync(It.Is<Book>(b => b.Id == 5 && b.Title == dto.Title && b.AuthorId == dto.AuthorId)))
+            .ReturnsAsync(updatedBook);
+
+        var result = await _sut.UpdateBookAsync(5, dto);
+
+        Assert.NotNull(result);
+        Assert.Equal(5, result.Id);
+        Assert.Equal("Refactoring", result.Title);
+        Assert.Equal("Martin Fowler", result.AuthorFullName);
+    }
+
+    [Fact]
+    public async Task UpdateBookAsync_ReturnsNull_WhenBookNotFound()
+    {
+        _repositoryMock.Setup(r => r.UpdateAsync(It.IsAny<Book>())).ReturnsAsync((Book?)null);
+
+        var result = await _sut.UpdateBookAsync(999, new UpdateBookDto("X", 1));
+
+        Assert.Null(result);
+    }
+
+    [Fact]
     public async Task DeleteBookAsync_ReturnsTrue_WhenBookExists()
     {
         _repositoryMock.Setup(r => r.DeleteAsync(1)).ReturnsAsync(true);

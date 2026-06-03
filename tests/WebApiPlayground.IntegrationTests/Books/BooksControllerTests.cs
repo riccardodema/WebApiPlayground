@@ -1,5 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using WebApiPlayground.Api.Authorization;
@@ -222,6 +225,145 @@ public class BooksControllerTests : IAsyncLifetime
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlaygroundDbContext>();
         Assert.Equal(2, await db.Books.CountAsync());
+    }
+
+    // --- POST /api/books: validazione input (400 ProblemDetails) ---
+
+    [Fact]
+    public async Task CreateBook_WithEmptyTitle_Returns400ProblemDetailsWithFieldError()
+    {
+        var response = await _writeClient.PostAsJsonAsync("/api/books", new CreateBookDto("", 1));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+        Assert.NotNull(problem);
+        Assert.Equal(StatusCodes.Status400BadRequest, problem.Status);
+        Assert.True(problem.Errors.ContainsKey("Title"));
+        Assert.Contains(problem.Errors["Title"], m => m.Contains("required", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task CreateBook_WithNonPositiveAuthorId_Returns400()
+    {
+        var response = await _writeClient.PostAsJsonAsync("/api/books", new CreateBookDto("Valid Title", 0));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+        Assert.NotNull(problem);
+        Assert.True(problem.Errors.ContainsKey("AuthorId"));
+    }
+
+    [Fact]
+    public async Task CreateBook_WithTooLongTitle_Returns400()
+    {
+        var dto = new CreateBookDto(new string('a', 101), 1);
+
+        var response = await _writeClient.PostAsJsonAsync("/api/books", dto);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+        Assert.NotNull(problem);
+        Assert.True(problem.Errors.ContainsKey("Title"));
+    }
+
+    [Fact]
+    public async Task CreateBook_WithInvalidInput_ProblemDetailsCarriesCorrelationId()
+    {
+        var response = await _writeClient.PostAsJsonAsync("/api/books", new CreateBookDto("", 0));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.True(response.Headers.TryGetValues("X-Correlation-Id", out var headerValues));
+        var correlationHeader = headerValues!.First();
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.True(doc.RootElement.TryGetProperty("correlationId", out var correlationProp));
+        Assert.Equal(correlationHeader, correlationProp.GetString());
+    }
+
+    [Fact]
+    public async Task CreateBook_WithInvalidInput_IsNotPersisted()
+    {
+        await _writeClient.PostAsJsonAsync("/api/books", new CreateBookDto("", 0));
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlaygroundDbContext>();
+        Assert.Equal(0, await db.Books.CountAsync());
+    }
+
+    // --- PUT /api/books/{id} ---
+
+    [Fact]
+    public async Task UpdateBook_WhenExists_Returns200AndPersistsChanges()
+    {
+        var author = await SeedAuthorAsync("Original Author");
+        var book = await SeedBookAsync(author.Id, "Original Title");
+        var newAuthor = await SeedAuthorAsync("New Author");
+
+        var response = await _writeClient.PutAsJsonAsync(
+            $"/api/books/{book.Id}", new UpdateBookDto("Updated Title", newAuthor.Id));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var updated = await response.Content.ReadFromJsonAsync<BookDto>();
+        Assert.NotNull(updated);
+        Assert.Equal(book.Id, updated.Id);
+        Assert.Equal("Updated Title", updated.Title);
+        Assert.Equal("New Author", updated.AuthorFullName);
+
+        var dbBook = await FindBookInDbAsync(book.Id);
+        Assert.NotNull(dbBook);
+        Assert.Equal("Updated Title", dbBook.Title);
+        Assert.Equal(newAuthor.Id, dbBook.AuthorId);
+    }
+
+    [Fact]
+    public async Task UpdateBook_WhenNotFound_Returns404()
+    {
+        var author = await SeedAuthorAsync();
+
+        var response = await _writeClient.PutAsJsonAsync(
+            "/api/books/99999", new UpdateBookDto("Whatever", author.Id));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateBook_WithInvalidInput_Returns400AndDoesNotChangeDb()
+    {
+        var author = await SeedAuthorAsync();
+        var book = await SeedBookAsync(author.Id, "Keep This Title");
+
+        var response = await _writeClient.PutAsJsonAsync(
+            $"/api/books/{book.Id}", new UpdateBookDto("", 0));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+        Assert.NotNull(problem);
+        Assert.True(problem.Errors.ContainsKey("Title"));
+        Assert.True(problem.Errors.ContainsKey("AuthorId"));
+
+        var dbBook = await FindBookInDbAsync(book.Id);
+        Assert.NotNull(dbBook);
+        Assert.Equal("Keep This Title", dbBook.Title);
+    }
+
+    [Fact]
+    public async Task UpdateBook_WithReadScopeOnly_Returns403()
+    {
+        var response = await _readClient.PutAsJsonAsync("/api/books/1", new UpdateBookDto("X", 1));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateBook_WithoutToken_Returns401()
+    {
+        var client = _factory.CreateAnonymousClient();
+
+        var response = await client.PutAsJsonAsync("/api/books/1", new UpdateBookDto("X", 1));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     // --- DELETE /api/books/{id} ---
