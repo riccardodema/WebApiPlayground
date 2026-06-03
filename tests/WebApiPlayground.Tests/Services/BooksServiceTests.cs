@@ -3,6 +3,7 @@ using Moq;
 using Xunit;
 using WebApiPlayground.Application.DTOs;
 using WebApiPlayground.Application.Interfaces;
+using WebApiPlayground.Application.Querying;
 using WebApiPlayground.Application.Services;
 using WebApiPlayground.Domain.Entities;
 
@@ -31,7 +32,7 @@ public class BooksServiceTests
             new() { Id = 2, Title = "The Pragmatic Programmer", AuthorId = 2, Author = new Author { Id = 2, FullName = "Dave Thomas" } }
         };
         _repositoryMock
-            .Setup(r => r.GetPagedAsync(1, 20, "id", false))
+            .Setup(r => r.GetPagedAsync(1, 20, BookSortField.Id, SortDirection.Ascending))
             .ReturnsAsync((books, 2));
 
         var result = await _sut.GetBooksAsync(Query());
@@ -45,7 +46,7 @@ public class BooksServiceTests
     public async Task GetBooksAsync_ReturnsEmptyPage_WhenNoBooksExist()
     {
         _repositoryMock
-            .Setup(r => r.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>()))
+            .Setup(r => r.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<BookSortField>(), It.IsAny<SortDirection>()))
             .ReturnsAsync((new List<Book>(), 0));
 
         var result = await _sut.GetBooksAsync(Query());
@@ -62,7 +63,7 @@ public class BooksServiceTests
     {
         // page 2 di 7 con 127 elementi totali, size 20
         _repositoryMock
-            .Setup(r => r.GetPagedAsync(2, 20, "id", false))
+            .Setup(r => r.GetPagedAsync(2, 20, BookSortField.Id, SortDirection.Ascending))
             .ReturnsAsync((new List<Book> { new() { Id = 21, Title = "X", Author = new Author { FullName = "A" } } }, 127));
 
         var result = await _sut.GetBooksAsync(Query(pageNumber: 2));
@@ -76,27 +77,29 @@ public class BooksServiceTests
     }
 
     [Fact]
-    public async Task GetBooksAsync_MapsSortDirDesc_ToDescendingTrue()
+    public async Task GetBooksAsync_MapsSortByTitleDesc_ToEnums()
     {
         _repositoryMock
-            .Setup(r => r.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>()))
+            .Setup(r => r.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<BookSortField>(), It.IsAny<SortDirection>()))
             .ReturnsAsync((new List<Book>(), 0));
 
         await _sut.GetBooksAsync(Query(sortBy: "title", sortDir: "DESC"));
 
-        _repositoryMock.Verify(r => r.GetPagedAsync(1, 20, "title", true), Times.Once);
+        _repositoryMock.Verify(
+            r => r.GetPagedAsync(1, 20, BookSortField.Title, SortDirection.Descending), Times.Once);
     }
 
     [Fact]
     public async Task GetBooksAsync_FallsBackToId_WhenSortByNotAllowed()
     {
         _repositoryMock
-            .Setup(r => r.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>()))
+            .Setup(r => r.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<BookSortField>(), It.IsAny<SortDirection>()))
             .ReturnsAsync((new List<Book>(), 0));
 
         await _sut.GetBooksAsync(Query(sortBy: "DROP TABLE"));
 
-        _repositoryMock.Verify(r => r.GetPagedAsync(1, 20, "id", false), Times.Once);
+        _repositoryMock.Verify(
+            r => r.GetPagedAsync(1, 20, BookSortField.Id, SortDirection.Ascending), Times.Once);
     }
 
     [Fact]
@@ -168,7 +171,7 @@ public class BooksServiceTests
             new() { Id = 1, Title = "Orphan Book", AuthorId = 1, Author = null }
         };
         _repositoryMock
-            .Setup(r => r.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>()))
+            .Setup(r => r.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<BookSortField>(), It.IsAny<SortDirection>()))
             .ReturnsAsync((books, 1));
 
         var result = await _sut.GetBooksAsync(Query());

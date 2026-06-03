@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using WebApiPlayground.Application.DTOs;
 using WebApiPlayground.Application.Interfaces;
+using WebApiPlayground.Application.Querying;
 using WebApiPlayground.Domain.Entities;
 
 namespace WebApiPlayground.Application.Services;
@@ -18,28 +19,22 @@ public class BooksService : IBooksService
         _logger = logger;
     }
 
-    // Campi ammessi per l'ordinamento: whitelist contro injection di colonne arbitrarie.
-    private static readonly HashSet<string> AllowedSortFields =
-        new(StringComparer.OrdinalIgnoreCase) { "id", "title", "author" };
-
     public async Task<PagedResult<BookDto>> GetBooksAsync(BooksQueryParameters query)
     {
-        var sortBy = AllowedSortFields.Contains(query.SortBy)
-            ? query.SortBy.ToLowerInvariant()
-            : "id";
-
-        if (!AllowedSortFields.Contains(query.SortBy))
+        // Il vocabolario delle stringhe di sort vive solo in BookSortParser (whitelist type-safe).
+        if (!BookSortParser.TryParseField(query.SortBy, out var sortField))
             _logger.LogWarning(
-                "Unknown sortBy '{RequestedSortBy}' — falling back to 'id'", query.SortBy);
+                "Unknown sortBy '{RequestedSortBy}' — falling back to {DefaultSort}",
+                query.SortBy, BookSortParser.DefaultField);
 
-        var descending = string.Equals(query.SortDir, "desc", StringComparison.OrdinalIgnoreCase);
+        var direction = BookSortParser.ParseDirection(query.SortDir);
 
         _logger.LogDebug(
             "Retrieving books page {PageNumber} (size {PageSize}), sort {SortBy} {SortDir}",
-            query.PageNumber, query.PageSize, sortBy, descending ? "DESC" : "ASC");
+            query.PageNumber, query.PageSize, sortField, direction);
 
         var (books, totalCount) =
-            await _repository.GetPagedAsync(query.PageNumber, query.PageSize, sortBy, descending);
+            await _repository.GetPagedAsync(query.PageNumber, query.PageSize, sortField, direction);
 
         var items = books.Select(MapToDto).ToList();
 
