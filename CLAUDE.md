@@ -4,6 +4,7 @@
 
 | Task | File da leggere |
 |------|-----------------|
+| Capire dove sta andando il progetto / cosa implementare (priorità, backlog capability backend) | `.claude/context/roadmap.md` |
 | Aggiungere risorsa REST | `.claude/context/architecture.md` + `.claude/context/conventions.md` |
 | Capire struttura/dipendenze | `.claude/context/architecture.md` |
 | Scrivere codice (entity/dto/service/repo/controller) | `.claude/context/conventions.md` |
