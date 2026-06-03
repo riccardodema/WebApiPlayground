@@ -109,6 +109,18 @@ Poi committare sia `.gitignore` sia il `.publish.xml`. Verifica: `git check-igno
 
 ---
 
+## [L08] WebApplicationFactory gira in Development → il Detail dev-only "trapela" nei test; endpoint di test via ApplicationPart
+
+**Contesto:** testare `GlobalExceptionHandler` (eccezione non gestita → ProblemDetails 500). Dettagli in `.claude/context/error-handling.md`.
+**Errori e cause:**
+- **Ambiente di test = Development.** `WebApplicationFactory<Program>` avvia l'app in ambiente **Development** di default (lo conferma anche la guard `if (!app.Environment.IsDevelopment()) app.UseHttpsRedirection();` — in non-Development il redirect HTTPS romperebbe i test HTTP via TestServer con 307). Conseguenza: il `Detail` del ProblemDetails — che includiamo **solo in Development** per non fare info-leak in prod — *è presente* nei test. Un assert tipo `DoesNotContain(messaggioEccezione)` **fallisce**. → Non testare il comportamento prod-only sotto WebApplicationFactory senza forzare l'ambiente; testare invece ciò che è env-agnostico (status 500, `application/problem+json`, `correlationId` nel body = header).
+- **Esercitare un handler 500 senza endpoint fittizi in produzione.** Serve un endpoint che lancia, ma non deve esistere nell'app reale. → Mettere un `ThrowingTestController` nell'assembly dei test e iniettarlo nella pipeline reale con `services.AddControllers().AddApplicationPart(typeof(PlaygroundApiFactory).Assembly)` dentro `ConfigureWebHost`. L'endpoint esiste solo quando gira la factory di test.
+- **correlationId nel body d'errore.** L'handler gira fuori dallo scope Serilog `LogContext`, quindi non "vede" la property `CorrelationId`. → Il `CorrelationIdMiddleware` salva l'id anche in `HttpContext.Items[ItemKey]`; l'enrichment `CustomizeProblemDetails` lo rilegge da lì. `UseExceptionHandler` deve stare **dopo** il middleware del correlation id.
+
+**Soluzione:** vedi `Api/ErrorHandling/GlobalExceptionHandler.cs`, `Api/Extensions/ErrorHandlingExtensions.cs`, `tests/WebApiPlayground.IntegrationTests/Infrastructure/ThrowingTestController.cs` e `.../ErrorHandling/GlobalExceptionHandlerTests.cs`.
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 
