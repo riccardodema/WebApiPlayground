@@ -40,8 +40,11 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
 
 ## Tier 2 — Pattern moderni (differenziatori)
 
-- ⬜ **Caching**: HTTP caching (ETag + `Cache-Control`) sui GET + server-side `HybridCache`
-  (in-memory ora, Redis-ready). Storia completa di **cache invalidation** su create/update/delete.
+- ✅ **Caching**: HTTP caching (ETag + `Cache-Control` + 304) sui GET + server-side `HybridCache`
+  via **FusionCache** (`.AsHybridCache()`; L1 in-memory ora, **L2 Redis + backplane** config-gated per
+  il multi-istanza). Storia completa di **cache invalidation** per tag su create/update/delete.
+  Decoratore `CachingBooksService` (Application) sull'astrazione `HybridCache`; FusionCache/Redis in
+  Infrastructure (regola architetturale che lo enforce). Vedi `.claude/context/caching.md`, `[L11]`.
 - ⬜ **Idempotency**: middleware `Idempotency-Key` per i POST (store + replay della prima risposta).
 - ⬜ **Rate limiting**: rate limiter nativo .NET con policy (es. fixed/sliding window) + 429
   ProblemDetails.

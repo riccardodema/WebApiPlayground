@@ -2,6 +2,7 @@ using Scalar.AspNetCore;
 using Serilog;
 using WebApiPlayground.Api.Extensions;
 using WebApiPlayground.Api.HealthChecks;
+using WebApiPlayground.Api.Http;
 using WebApiPlayground.Api.Middleware;
 using WebApiPlayground.Api.OpenApi;
 using WebApiPlayground.Api.Validation;
@@ -25,7 +26,12 @@ try
     // Il ValidationFilter (FluentValidation) gira su ogni action; le violazioni e quelle
     // di model binding (DataAnnotations) producono la STESSA risposta 400 ProblemDetails
     // tramite InvalidModelStateResponseFactory.
-    builder.Services.AddControllers(options => options.Filters.Add<ValidationFilter>())
+    // ETagResultFilter: HTTP caching (ETag/Cache-Control/304) sui GET.
+    builder.Services.AddControllers(options =>
+        {
+            options.Filters.Add<ValidationFilter>();
+            options.Filters.Add<ETagResultFilter>();
+        })
         .ConfigureApiBehaviorOptions(options =>
             options.InvalidModelStateResponseFactory = ValidationProblemDetailsFactory.Create);
 
