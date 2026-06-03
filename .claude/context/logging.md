@@ -129,7 +129,13 @@ Usare **sempre** named properties strutturate — mai string interpolation nei l
 | `{BookTitle}` | `string` | create, find |
 | `{AuthorId}` | `int` | create |
 | `{AuthorName}` | `string` | retrieve con autore risolto |
-| `{BookCount}` | `int` | GetAll |
+| `{BookCount}` | `int` | lista paginata (elementi nella pagina) |
+| `{TotalCount}` | `int` | lista paginata (totale righe) |
+| `{TotalPages}` | `int` | lista paginata (controller) |
+| `{PageNumber}` | `int` | lista paginata (page corrente) |
+| `{PageSize}` | `int` | lista paginata (dimensione pagina) |
+| `{SortBy}` | `string` | lista paginata (campo ordinamento) |
+| `{SortDir}` | `string` | lista paginata (ASC/DESC) |
 | `{RequestMethod}` | `string` | middleware HTTP |
 | `{RequestPath}` | `string` | middleware HTTP |
 | `{StatusCode}` | `int` | middleware HTTP |
@@ -150,10 +156,10 @@ _logger.LogInformation($"Book created: {created.Id} - {created.Title}"); // NO �
 ```
 [10:37:00 INF] [] Starting WebApiPlayground API
 
-[10:39:40 INF] [a1b2c3d4e5f6789abcdef01234567890] WebApiPlayground.Controllers.BooksController: Fetching all books
-[10:39:40 DBG] [a1b2c3d4e5f6789abcdef01234567890] WebApiPlayground.Application.Services.BooksService: Retrieving all books from repository
-[10:39:40 DBG] [a1b2c3d4e5f6789abcdef01234567890] WebApiPlayground.Infrastructure.Repositories.BookRepository: Query returned 2 book(s)
-[10:39:40 INF] [a1b2c3d4e5f6789abcdef01234567890] WebApiPlayground.Controllers.BooksController: Successfully retrieved 2 book(s)
+[10:39:40 INF] [a1b2c3d4e5f6789abcdef01234567890] WebApiPlayground.Controllers.BooksController: Fetching books — page 1 (size 20), sort id asc
+[10:39:40 DBG] [a1b2c3d4e5f6789abcdef01234567890] WebApiPlayground.Application.Services.BooksService: Retrieving books page 1 (size 20), sort id ASC
+[10:39:40 DBG] [a1b2c3d4e5f6789abcdef01234567890] WebApiPlayground.Infrastructure.Repositories.BookRepository: Paged query returned 2 of 2 book(s)
+[10:39:40 INF] [a1b2c3d4e5f6789abcdef01234567890] WebApiPlayground.Controllers.BooksController: Successfully retrieved 2 of 2 book(s) — page 1/1
 [10:39:40 INF] [a1b2c3d4e5f6789abcdef01234567890] Serilog.AspNetCore.RequestLoggingMiddleware: HTTP GET /api/books responded 200 in 45.312 ms
 
 [10:39:41 WRN] [b2c3d4e5f6789abc0123456789abcdef] WebApiPlayground.Controllers.BooksController: Book with ID 99 was not found
