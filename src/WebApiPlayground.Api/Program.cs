@@ -21,6 +21,7 @@ try
         .ReadFrom.Services(services));
 
     builder.Services.AddControllers();
+    builder.Services.AddApiProblemDetails();
     builder.Services.AddOpenApi(options =>
         options.AddDocumentTransformer<BearerSecuritySchemeTransformer>());
 
@@ -33,6 +34,10 @@ try
     var app = builder.Build();
 
     app.UseMiddleware<CorrelationIdMiddleware>();
+
+    // Subito dopo il correlation id (così il body d'errore lo include) e prima del resto
+    // della pipeline: ogni eccezione non gestita a valle diventa un ProblemDetails 500.
+    app.UseExceptionHandler();
 
     app.UseSerilogRequestLogging(options =>
     {

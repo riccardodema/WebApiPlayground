@@ -25,6 +25,10 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
             services.AddDbContext<PlaygroundDbContext>(options =>
                 options.UseSqlServer(_sqlContainer.GetConnectionString()));
 
+            // Aggiunge il controller di test (ThrowingTestController) alla pipeline reale,
+            // per esercitare GlobalExceptionHandler end-to-end senza endpoint fittizi in produzione.
+            services.AddControllers().AddApplicationPart(typeof(PlaygroundApiFactory).Assembly);
+
             // Sostituisce il JWT Bearer Entra ID con uno schema di test impostato come default:
             // i test non richiedono un tenant reale e simulano i claim via header.
             services
