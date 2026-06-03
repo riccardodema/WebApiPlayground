@@ -1,6 +1,6 @@
 using System.Reflection;
+using WebApiPlayground.Api.Controllers;
 using WebApiPlayground.Application.Interfaces;
-using WebApiPlayground.Controllers;
 using WebApiPlayground.Domain.Entities;
 using WebApiPlayground.Infrastructure.Persistence;
 
@@ -19,11 +19,9 @@ internal static class ArchitectureRules
     internal const string ApplicationNamespace = "WebApiPlayground.Application";
     internal const string InfrastructureNamespace = "WebApiPlayground.Infrastructure";
 
-    // L'assembly API ospita due namespace radice: WebApiPlayground.Api.* (extension,
-    // middleware, ...) e WebApiPlayground.Controllers (i controller). Vanno entrambi
-    // vietati ai layer inferiori, altrimenti un riferimento ai controller sfuggirebbe.
-    internal static readonly string[] ApiNamespaces =
-        ["WebApiPlayground.Api", "WebApiPlayground.Controllers"];
+    // Tutto il layer API (controller inclusi) vive sotto WebApiPlayground.Api: un solo
+    // namespace radice da vietare ai layer inferiori. Array per estendibilità futura.
+    internal static readonly string[] ApiNamespaces = ["WebApiPlayground.Api"];
 
     // Dipendenze tecnologiche che NON devono risalire oltre il loro layer.
     internal const string EntityFrameworkNamespace = "Microsoft.EntityFrameworkCore";
