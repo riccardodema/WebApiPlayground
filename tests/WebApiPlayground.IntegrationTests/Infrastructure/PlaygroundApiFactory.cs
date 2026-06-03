@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.MsSql;
+using WebApiPlayground.Application.Caching;
 using WebApiPlayground.Infrastructure.Persistence;
 using Xunit;
 
@@ -76,5 +78,12 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         var db = scope.ServiceProvider.GetRequiredService<PlaygroundDbContext>();
         await db.Database.ExecuteSqlRawAsync("DELETE FROM Books");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM Authors");
+
+        // I test fanno seed direttamente sul DB (bypassando l'API), quindi non passano per
+        // l'invalidazione del decoratore di caching: senza questo flush la cache L1 — condivisa
+        // dalla factory tra i test della collection — restituirebbe dati stale → test flaky.
+        // Vedi .claude/lessons.md [L11].
+        var cache = scope.ServiceProvider.GetRequiredService<HybridCache>();
+        await cache.RemoveByTagAsync(BookCacheKeys.Books);
     }
 }

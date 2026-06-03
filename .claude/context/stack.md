@@ -6,9 +6,15 @@
 |---------|----------|----------|
 | `Microsoft.AspNetCore.OpenApi` | API | 10.0.0 |
 | `Scalar.AspNetCore` | API | 2.6.0 |
+| `Microsoft.Extensions.Caching.Hybrid` | Application | 10.0.0 |
 | `Microsoft.EntityFrameworkCore` | Infrastructure | 10.0.0 |
 | `Microsoft.EntityFrameworkCore.SqlServer` | Infrastructure | 10.0.0 |
 | `Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore` | Infrastructure | 10.0.0 |
+| `Microsoft.Extensions.Configuration.Binder` | Infrastructure | 10.0.0 |
+| `Microsoft.Extensions.Caching.StackExchangeRedis` | Infrastructure | 10.0.0 |
+| `ZiggyCreatures.FusionCache` | Infrastructure | 2.6.0 |
+| `ZiggyCreatures.FusionCache.Serialization.SystemTextJson` | Infrastructure | 2.6.0 |
+| `ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis` | Infrastructure | 2.6.0 |
 | `xunit` | Tests | 2.9.3 |
 | `Moq` | Tests | 4.20.72 |
 | `Microsoft.NET.Test.Sdk` | Tests | 17.12.0 |
@@ -56,4 +62,14 @@ Va in `src/WebApiPlayground.Api/appsettings.Development.json` (mai in `appsettin
 
 ```json
 { "ConnectionStrings": { "Default": "Server=localhost;Database=WebApiPlayground;Trusted_Connection=True;TrustServerCertificate=True;" } }
+```
+
+## Config cache (sezione `Cache`)
+
+Default sensati: senza configurazione la cache è solo L1 in memoria. Valorizzando
+`Cache:Redis:ConnectionString` si attivano L2 Redis + backplane (multi-istanza). Vedi
+`.claude/context/caching.md`.
+
+```json
+{ "Cache": { "Duration": "00:01:00", "FailSafeMaxDuration": "02:00:00", "Redis": { "ConnectionString": "" } } }
 ```

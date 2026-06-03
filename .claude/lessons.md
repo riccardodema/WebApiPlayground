@@ -157,6 +157,35 @@ emettere `application/json`. Scrivere direttamente sulla `Response` è determini
 
 ---
 
+## [L11] Cache server-side + test che fanno seed diretto sul DB → letture stale/flaky
+
+**Contesto:** introdotto il caching server-side con un decoratore `CachingBooksService` su
+`HybridCache` (FusionCache). Dettagli in `.claude/context/caching.md`.
+**Approccio errato:** lasciare i test d'integrazione esistenti invariati. Quelli fanno **seed
+diretto sul DB** via `DbContext` (per arrangiare lo stato) e poi chiamano gli endpoint GET.
+**Errore:** GET che restituiscono dati **vecchi** → assert falliti in modo non deterministico
+(flaky) a seconda dell'ordine dei test.
+**Causa:** il seed diretto **bypassa l'API** e quindi il decoratore di caching, che invalida solo
+sulle scritture *attraverso il service*. La `WebApplicationFactory` è condivisa nella collection,
+quindi la cache **L1 in memoria** sopravvive tra un test e l'altro: una pagina cache-ata in un test
+viene restituita stale in quello successivo, nonostante il `DELETE FROM Books` del reset.
+**Soluzione:** nel reset condiviso (`PlaygroundApiFactory.ResetDatabaseAsync`) svuotare anche la
+cache: `cache.RemoveByTagAsync(BookCacheKeys.Books)`. Il reset del DB e quello della cache vanno
+sempre insieme.
+
+**Note aggiuntive:**
+- **FusionCache target net8.0 su net10**: il pacchetto `ZiggyCreatures.FusionCache` 2.6.0 dichiara
+  `net8.0`/`netstandard2.0`; gira senza problemi su net10 (compatibilità in avanti), non serve un
+  target dedicato.
+- **Conflitto di versione con HybridCache**: `Microsoft.Extensions.Caching.Hybrid` **10.6.0** tira
+  dipendenze transitive `Microsoft.Extensions.*` **10.0.8**, in conflitto col baseline **10.0.0**
+  pinnato nei progetti → `NU1605` (downgrade come errore). Allineare l'Hybrid a **10.0.0** (i tag e
+  `RemoveByTagAsync` ci sono già da .NET 9), non bumpare tutto il resto.
+- **`ConfigurationBinder.Get<T>()`** richiede il pacchetto `Microsoft.Extensions.Configuration.Binder`:
+  `GetConnectionString`/indexer funzionano senza, ma il binding tipizzato di `CacheSettings` no.
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

@@ -27,6 +27,12 @@ internal static class ArchitectureRules
     internal const string EntityFrameworkNamespace = "Microsoft.EntityFrameworkCore";
     internal const string AspNetCoreNamespace = "Microsoft.AspNetCore";
 
+    // Backing store della cache: Application deve dipendere solo dall'astrazione HybridCache
+    // (Microsoft.Extensions.Caching.Hybrid), MAI dai concreti FusionCache/Redis (che vivono
+    // nella composition root, layer Infrastructure).
+    internal static readonly string[] CacheImplementationNamespaces =
+        ["ZiggyCreatures.Caching.Fusion", "StackExchange.Redis", "Microsoft.Extensions.Caching.StackExchangeRedis"];
+
     // Assembly anchor: un tipo pubblico stabile per ciascun layer.
     internal static readonly Assembly DomainAssembly = typeof(Book).Assembly;
     internal static readonly Assembly ApplicationAssembly = typeof(IBookRepository).Assembly;

@@ -45,8 +45,30 @@ Clean Architecture, dependencies point inwards (outer layers depend on inner, ne
 - **.NET 10** Web API · **EF Core 10** (SQL Server / Azure SQL)
 - **Scalar** for OpenAPI UI (Swashbuckle is incompatible with .NET 10)
 - **Serilog** structured logging
+- **HybridCache via FusionCache** (Redis-ready) + **HTTP caching (ETag)**
 - **xUnit · Moq · Testcontainers.MsSql** for testing
 - **SQL Database Project (DACPAC)** for the database schema
+
+## Caching
+
+Two complementary layers cut the cost of repeated `GET`s — a request that would otherwise re-run a
+DB query, re-map, re-serialize and re-transfer identical bytes:
+
+- **Server-side — `HybridCache` via FusionCache.** The data layer is cached: an L1 in-memory tier
+  serves hits in **microseconds** instead of hitting SQL Server, with **stampede protection** (a
+  burst on an expired key triggers a single DB load, not a thundering herd) and **fail-safe** (serve
+  the last good value if the DB is momentarily down). The app depends only on the standard `HybridCache`
+  abstraction; FusionCache is the implementation, wired in the composition root.
+- **HTTP caching — ETag + `Cache-Control`.** Each `GET` carries a strong `ETag`; a follow-up request
+  with `If-None-Match` gets a **`304 Not Modified` with no body**, saving bandwidth and client work.
+- **Cache invalidation** is tag-based: every write (`POST`/`PUT`/`DELETE`) invalidates the `books`
+  tag in one call, dropping both single-book and list-page entries — no stale reads.
+- **Multi-instance ready.** Setting a Redis connection string activates an **L2 (Redis)** shared tier
+  plus a **backplane**: when one instance invalidates an entry, the backplane notifies all the others
+  to drop it from their L1, keeping the cache **coherent across instances** — config-only, no code
+  change. Empty connection string ⇒ memory-only.
+
+Details and the speed/latency rationale: [`.claude/context/caching.md`](.claude/context/caching.md).
 
 ## Database as code
 

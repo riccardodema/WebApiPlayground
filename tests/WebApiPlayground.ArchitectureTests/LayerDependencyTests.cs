@@ -87,6 +87,19 @@ public class LayerDependencyTests
         AssertArchitecture(result);
     }
 
+    [Fact]
+    public void Application_should_not_depend_on_cache_implementations()
+    {
+        // Il decoratore di caching usa solo l'astrazione HybridCache: FusionCache/Redis sono
+        // dettagli della composition root (Infrastructure), non devono trapelare in Application.
+        var result = Types.InAssembly(ArchitectureRules.ApplicationAssembly)
+            .ShouldNot()
+            .HaveDependencyOnAny(ArchitectureRules.CacheImplementationNamespaces)
+            .GetResult();
+
+        AssertArchitecture(result);
+    }
+
     // ---- Infrastructure: Domain + Application, mai API ----------------------
 
     [Fact]
