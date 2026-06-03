@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using WebApiPlayground.Application.Interfaces;
+using WebApiPlayground.Infrastructure.HealthChecks;
 using WebApiPlayground.Infrastructure.Persistence;
 using WebApiPlayground.Infrastructure.Repositories;
 
@@ -15,6 +16,11 @@ public static class DependencyInjection
             options.UseSqlServer(configuration.GetConnectionString("Default")));
 
         services.AddScoped<IBookRepository, BookRepository>();
+
+        // Health check di readiness sul DB: verifica che il DbContext riesca a connettersi.
+        // Tagged "ready" → esposto solo dal probe /health/ready (vedi Api/HealthChecks).
+        services.AddHealthChecks()
+            .AddDbContextCheck<PlaygroundDbContext>(name: "database", tags: [HealthCheckTags.Ready]);
 
         return services;
     }

@@ -26,13 +26,12 @@ Legenda stato: ✅ fatto · 🚧 in corso · ⬜ da fare
 
 Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
 
-- ⬜ **Exception handling globale + ProblemDetails (RFC 7807).** Oggi un'eccezione non gestita
-  → 500 grezzo. Aggiungere `AddProblemDetails()` + `IExceptionHandler` che emette un payload
-  ProblemDetails con il `CorrelationId` (correlazione log↔risposta). Mapping eccezioni note →
-  status code.
-- ⬜ **Health checks** `/health/live` (liveness) + `/health/ready` (readiness con probe DB via
-  EF `DbContext`). Agganciare il CI/CD a `/health/ready` al posto di `/openapi/v1.json` (che in
-  prod **non esiste**: OpenAPI è mappato solo in Development — vedi `Program.cs`).
+- ✅ **Exception handling globale + ProblemDetails (RFC 7807).** `AddProblemDetails()` +
+  `IExceptionHandler` con `correlationId`/`traceId` (correlazione log↔risposta), `Detail` solo in
+  Development. Vedi `.claude/context/error-handling.md`, `[L08]`. (PR #10)
+- ✅ **Health checks** `/health/live` (liveness) + `/health/ready` (readiness con probe DB via
+  `AddDbContextCheck`). CI/CD agganciato a `/health/ready` al posto di `/openapi/v1.json` (che in
+  prod non esisteva). Vedi `.claude/context/health-checks.md`, `[L09]`.
 - ⬜ **Validation input** (FluentValidation) su `CreateBookDto` (Title non vuoto/lunghezza,
   AuthorId > 0) + nuovo endpoint **Update (PUT)** per completare il CRUD. Errori → 400
   ProblemDetails coerente col punto sopra.

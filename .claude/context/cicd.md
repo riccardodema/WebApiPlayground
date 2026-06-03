@@ -129,4 +129,11 @@ I path `**/*.md` e `.claude/**` sono esclusi dai trigger CI/PR: modifiche alla d
 
 ### Health check post-deploy
 
-La pipeline CD esegue un `curl` sull'endpoint `/openapi/v1.json` dopo il deploy. Se l'endpoint risponde con HTTP 200 il deploy è considerato riuscito; altrimenti la pipeline fallisce e il problema è immediatamente visibile.
+La pipeline CD esegue un `curl` sull'endpoint **`/health/ready`** dopo il deploy. È il probe di
+**readiness** (vedi `.claude/context/health-checks.md`): risponde 200 solo se l'app è in piedi
+**e** raggiunge il DB — esattamente la condizione che vogliamo verificare dopo aver pubblicato il
+DACPAC e deployato l'app. Se risponde 200 il deploy è riuscito; altrimenti la pipeline fallisce e
+il problema è subito visibile.
+
+> Storico: prima si colpiva `/openapi/v1.json`, che però in produzione **non esiste** (OpenAPI è
+> mappato solo in Development) — un falso "verde". Sostituito con `/health/ready`.

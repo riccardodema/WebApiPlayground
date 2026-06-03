@@ -88,7 +88,7 @@ jobs:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
           package: artifacts/app
 
-      - name: Health check
+      - name: Health check (readiness)
         run: |
           curl --fail --retry 5 --retry-delay 5 \
-            "https://${{ vars.AZURE_WEBAPP_NAME }}.azurewebsites.net/openapi/v1.json"
+            "https://${{ vars.AZURE_WEBAPP_NAME }}.azurewebsites.net/health/ready"
