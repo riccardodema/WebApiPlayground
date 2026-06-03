@@ -1,6 +1,8 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using WebApiPlayground.Application.Interfaces;
+using WebApiPlayground.Application.Querying;
 using WebApiPlayground.Domain.Entities;
 using WebApiPlayground.Infrastructure.Persistence;
 
@@ -18,28 +20,23 @@ public class BookRepository : IBookRepository
     }
 
     public async Task<(IReadOnlyList<Book> Items, int TotalCount)> GetPagedAsync(
-        int pageNumber, int pageSize, string sortBy, bool descending)
+        int pageNumber, int pageSize, BookSortField sortBy, SortDirection direction)
     {
         _logger.LogDebug(
             "Executing paged query: page {PageNumber} (size {PageSize}), sort {SortBy} {SortDir}",
-            pageNumber, pageSize, sortBy, descending ? "DESC" : "ASC");
+            pageNumber, pageSize, sortBy, direction);
 
-        IQueryable<Book> query = _context.Books.Include(b => b.Author);
+        IQueryable<Book> source = _context.Books.Include(b => b.Author);
 
-        // ORDER BY deterministico: tiebreaker su Id, altrimenti l'OFFSET non è ripetibile
-        // quando si ordina per colonne non univoche (Title, Author.FullName).
-        query = (sortBy, descending) switch
+        var ordered = sortBy switch
         {
-            ("title", false) => query.OrderBy(b => b.Title).ThenBy(b => b.Id),
-            ("title", true) => query.OrderByDescending(b => b.Title).ThenBy(b => b.Id),
-            ("author", false) => query.OrderBy(b => b.Author!.FullName).ThenBy(b => b.Id),
-            ("author", true) => query.OrderByDescending(b => b.Author!.FullName).ThenBy(b => b.Id),
-            (_, true) => query.OrderByDescending(b => b.Id),
-            _ => query.OrderBy(b => b.Id),
+            BookSortField.Title => OrderByWithIdTiebreaker(source, b => b.Title, direction),
+            BookSortField.Author => OrderByWithIdTiebreaker(source, b => b.Author!.FullName, direction),
+            _ => OrderById(source, direction),
         };
 
-        var totalCount = await query.CountAsync();
-        var items = await query
+        var totalCount = await ordered.CountAsync();
+        var items = await ordered
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
@@ -48,6 +45,23 @@ public class BookRepository : IBookRepository
             "Paged query returned {BookCount} of {TotalCount} book(s)", items.Count, totalCount);
         return (items, totalCount);
     }
+
+    // ORDER BY <chiave> con tiebreaker deterministico sulla PK (Id): senza, l'OFFSET non è
+    // ripetibile quando si ordina per colonne non univoche (Title, Author.FullName). Vedi [L07].
+    private static IOrderedQueryable<Book> OrderByWithIdTiebreaker<TKey>(
+        IQueryable<Book> source, Expression<Func<Book, TKey>> keySelector, SortDirection direction)
+    {
+        var ordered = direction == SortDirection.Descending
+            ? source.OrderByDescending(keySelector)
+            : source.OrderBy(keySelector);
+        return ordered.ThenBy(b => b.Id);
+    }
+
+    // Ordinamento per PK: già univoco, nessun tiebreaker necessario.
+    private static IOrderedQueryable<Book> OrderById(IQueryable<Book> source, SortDirection direction) =>
+        direction == SortDirection.Descending
+            ? source.OrderByDescending(b => b.Id)
+            : source.OrderBy(b => b.Id);
 
     public async Task<Book?> GetByIdAsync(int id)
     {

@@ -1,5 +1,15 @@
 # Convenzioni di codice per layer
 
+## Principi trasversali
+
+- **No magic strings.** Un valore del contratto pubblico ripetuto (token di sort/filtro, chiavi,
+  stati, nomi di policy) non va scritto inline in più punti: centralizzalo in un **enum type-safe**
+  e/o `const`, con un **unico parser** che traduce le stringhe grezze in input. Il resto del codice
+  ragiona sui tipi, non sulle stringhe. Esempio: ordinamento libri in `Application/Querying/`
+  (`BookSortField`/`SortDirection` + `BookSortParser`) — vedi sez. *Paginazione*.
+- **DRY sull'ordinamento/query.** Logica ripetuta (es. direzione asc/desc + tiebreaker) va estratta
+  in un helper privato, non copiata per ogni ramo dello `switch`.
+
 ## Entity (`Domain/Entities/`)
 - POCO con `[Key]` sull'`Id`
 - Stringhe → `= string.Empty`; FK nullable → `Author? Author`; collezioni → `= new List<T>()`
@@ -44,11 +54,14 @@ Strategia **offset/page-based** + risposta **envelope** (`PagedResult<T>`). Defa
   quindi `class` (non `record`) con `[Range]`. Default `PageNumber=1`, `PageSize=20`, tetto
   `MaxPageSize=100`; `SortBy="id"`, `SortDir="asc"`. Bind nel controller con `[FromQuery]`.
 - **Validazione**: `[Range]` + `[ApiController]` → 400 ProblemDetails automatico per page/size fuori
-  range. `SortBy`/`SortDir` non in whitelist → fallback ai default nel service (log `Warning`), non 400.
-- **Whitelist sort** nel **service** (`HashSet` case-insensitive, es. `{ id, title, author }`):
-  mai passare stringhe arbitrarie all'`OrderBy` (anti-injection di colonna).
-- **Repository** `GetPagedAsync(pageNumber, pageSize, sortBy, descending)` → `(IReadOnlyList<T>, int TotalCount)`:
-  `IQueryable` con `switch` sull'ordinamento, **`ORDER BY` deterministico con tiebreaker `.ThenBy(Id)`**
-  (obbligatorio: senza, l'OFFSET non è ripetibile su colonne non univoche), poi `CountAsync()` +
-  `Skip((page-1)*size).Take(size)`. Vedi `[L07]` in `.claude/lessons.md`.
+  range. `SortBy`/`SortDir` non riconosciuti → fallback ai default nel service (log `Warning`), non 400.
+- **Vocabolario sort type-safe** (`Application/Querying/`): enum `BookSortField` (whitelist) e
+  `SortDirection`; le **magic string** del contratto HTTP (`"id"|"title"|"author"`, `"asc"|"desc"`)
+  vivono **solo** in `BookSortParser` (`TryParseField` + `ParseDirection`). Service e repository NON
+  contengono literal di ordinamento e ragionano solo su enum (anti-injection di colonna + niente
+  duplicazione). Estendere l'ordinamento = aggiungere un valore all'enum + un case nel parser e nel repo.
+- **Repository** `GetPagedAsync(pageNumber, pageSize, BookSortField, SortDirection)` →
+  `(IReadOnlyList<T>, int TotalCount)`: `switch` sull'enum; l'helper privato `OrderByWithIdTiebreaker`
+  centralizza direzione + **tiebreaker `.ThenBy(Id)`** (obbligatorio: senza, l'OFFSET non è ripetibile
+  su colonne non univoche — vedi `[L07]`); poi `CountAsync()` + `Skip((page-1)*size).Take(size)`.
 - **Controller**: `GetX([FromQuery] XQueryParameters query)` → `Ok(PagedResult<XDto>)`.
