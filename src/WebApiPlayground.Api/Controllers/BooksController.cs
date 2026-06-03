@@ -4,7 +4,7 @@ using WebApiPlayground.Api.Authorization;
 using WebApiPlayground.Application.DTOs;
 using WebApiPlayground.Application.Interfaces;
 
-namespace WebApiPlayground.Controllers;
+namespace WebApiPlayground.Api.Controllers;
 
 /// <summary>
 /// CRUD sui libri. Tutti gli endpoint richiedono un access token (Entra ID) e una policy

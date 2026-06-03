@@ -1,7 +1,7 @@
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
 using WebApiPlayground.Api.Authorization;
-using WebApiPlayground.Controllers;
+using WebApiPlayground.Api.Controllers;
 using Xunit;
 
 namespace WebApiPlayground.Tests.Controllers;
