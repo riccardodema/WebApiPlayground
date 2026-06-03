@@ -64,14 +64,18 @@ public class BooksControllerTests : IAsyncLifetime
     // --- GET /api/books ---
 
     [Fact]
-    public async Task GetBooks_WhenEmpty_Returns200WithEmptyList()
+    public async Task GetBooks_WhenEmpty_Returns200WithEmptyPage()
     {
         var response = await _readClient.GetAsync("/api/books");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var books = await response.Content.ReadFromJsonAsync<List<BookDto>>();
-        Assert.NotNull(books);
-        Assert.Empty(books);
+        var page = await response.Content.ReadFromJsonAsync<PagedResult<BookDto>>();
+        Assert.NotNull(page);
+        Assert.Empty(page.Items);
+        Assert.Equal(0, page.TotalCount);
+        Assert.Equal(0, page.TotalPages);
+        Assert.False(page.HasNext);
+        Assert.False(page.HasPrevious);
     }
 
     [Fact]
@@ -84,11 +88,59 @@ public class BooksControllerTests : IAsyncLifetime
         var response = await _readClient.GetAsync("/api/books");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var books = await response.Content.ReadFromJsonAsync<List<BookDto>>();
-        Assert.NotNull(books);
-        Assert.Equal(2, books.Count);
-        Assert.Contains(books, b => b.Title == "1984" && b.AuthorFullName == "George Orwell");
-        Assert.Contains(books, b => b.Title == "Animal Farm" && b.AuthorFullName == "George Orwell");
+        var page = await response.Content.ReadFromJsonAsync<PagedResult<BookDto>>();
+        Assert.NotNull(page);
+        Assert.Equal(2, page.TotalCount);
+        Assert.Equal(2, page.Items.Count);
+        Assert.Contains(page.Items, b => b.Title == "1984" && b.AuthorFullName == "George Orwell");
+        Assert.Contains(page.Items, b => b.Title == "Animal Farm" && b.AuthorFullName == "George Orwell");
+    }
+
+    [Fact]
+    public async Task GetBooks_RespectsPageSizeAndReportsMetadata()
+    {
+        var author = await SeedAuthorAsync();
+        await SeedBookAsync(author.Id, "A");
+        await SeedBookAsync(author.Id, "B");
+        await SeedBookAsync(author.Id, "C");
+
+        var response = await _readClient.GetAsync("/api/books?pageNumber=1&pageSize=2");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var page = await response.Content.ReadFromJsonAsync<PagedResult<BookDto>>();
+        Assert.NotNull(page);
+        Assert.Equal(2, page.Items.Count);
+        Assert.Equal(3, page.TotalCount);
+        Assert.Equal(2, page.TotalPages);
+        Assert.True(page.HasNext);
+        Assert.False(page.HasPrevious);
+    }
+
+    [Fact]
+    public async Task GetBooks_SortByTitleDesc_OrdersResultsDescending()
+    {
+        var author = await SeedAuthorAsync();
+        await SeedBookAsync(author.Id, "Alpha");
+        await SeedBookAsync(author.Id, "Zulu");
+        await SeedBookAsync(author.Id, "Mike");
+
+        var response = await _readClient.GetAsync("/api/books?sortBy=title&sortDir=desc");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var page = await response.Content.ReadFromJsonAsync<PagedResult<BookDto>>();
+        Assert.NotNull(page);
+        Assert.Equal(new[] { "Zulu", "Mike", "Alpha" }, page.Items.Select(b => b.Title).ToArray());
+    }
+
+    [Theory]
+    [InlineData("/api/books?pageSize=0")]
+    [InlineData("/api/books?pageNumber=0")]
+    [InlineData("/api/books?pageSize=101")]
+    public async Task GetBooks_WithInvalidPagingParams_Returns400(string url)
+    {
+        var response = await _readClient.GetAsync(url);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     // --- GET /api/books/{id} ---

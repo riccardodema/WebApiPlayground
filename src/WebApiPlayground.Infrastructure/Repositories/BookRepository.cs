@@ -17,16 +17,36 @@ public class BookRepository : IBookRepository
         _logger = logger;
     }
 
-    public async Task<ICollection<Book>> GetAllAsync()
+    public async Task<(IReadOnlyList<Book> Items, int TotalCount)> GetPagedAsync(
+        int pageNumber, int pageSize, string sortBy, bool descending)
     {
-        _logger.LogDebug("Executing query: SELECT all books with authors");
+        _logger.LogDebug(
+            "Executing paged query: page {PageNumber} (size {PageSize}), sort {SortBy} {SortDir}",
+            pageNumber, pageSize, sortBy, descending ? "DESC" : "ASC");
 
-        var books = await _context.Books
-            .Include(b => b.Author)
+        IQueryable<Book> query = _context.Books.Include(b => b.Author);
+
+        // ORDER BY deterministico: tiebreaker su Id, altrimenti l'OFFSET non è ripetibile
+        // quando si ordina per colonne non univoche (Title, Author.FullName).
+        query = (sortBy, descending) switch
+        {
+            ("title", false) => query.OrderBy(b => b.Title).ThenBy(b => b.Id),
+            ("title", true) => query.OrderByDescending(b => b.Title).ThenBy(b => b.Id),
+            ("author", false) => query.OrderBy(b => b.Author!.FullName).ThenBy(b => b.Id),
+            ("author", true) => query.OrderByDescending(b => b.Author!.FullName).ThenBy(b => b.Id),
+            (_, true) => query.OrderByDescending(b => b.Id),
+            _ => query.OrderBy(b => b.Id),
+        };
+
+        var totalCount = await query.CountAsync();
+        var items = await query
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync();
 
-        _logger.LogDebug("Query returned {BookCount} book(s)", books.Count);
-        return books;
+        _logger.LogDebug(
+            "Paged query returned {BookCount} of {TotalCount} book(s)", items.Count, totalCount);
+        return (items, totalCount);
     }
 
     public async Task<Book?> GetByIdAsync(int id)

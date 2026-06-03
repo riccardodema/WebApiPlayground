@@ -18,31 +18,85 @@ public class BooksServiceTests
         _sut = new BooksService(_repositoryMock.Object, NullLogger<BooksService>.Instance);
     }
 
+    private static BooksQueryParameters Query(
+        int pageNumber = 1, int pageSize = 20, string sortBy = "id", string sortDir = "asc") =>
+        new() { PageNumber = pageNumber, PageSize = pageSize, SortBy = sortBy, SortDir = sortDir };
+
     [Fact]
-    public async Task GetAllBooksAsync_ReturnsMappedDtos_WhenBooksExist()
+    public async Task GetBooksAsync_ReturnsMappedDtos_WhenBooksExist()
     {
         var books = new List<Book>
         {
             new() { Id = 1, Title = "Clean Code", AuthorId = 1, Author = new Author { Id = 1, FullName = "Robert C. Martin" } },
             new() { Id = 2, Title = "The Pragmatic Programmer", AuthorId = 2, Author = new Author { Id = 2, FullName = "Dave Thomas" } }
         };
-        _repositoryMock.Setup(r => r.GetAllAsync()).ReturnsAsync(books);
+        _repositoryMock
+            .Setup(r => r.GetPagedAsync(1, 20, "id", false))
+            .ReturnsAsync((books, 2));
 
-        var result = await _sut.GetAllBooksAsync();
+        var result = await _sut.GetBooksAsync(Query());
 
-        Assert.Equal(2, result.Count);
-        Assert.Equal("Clean Code", result.First().Title);
-        Assert.Equal("Robert C. Martin", result.First().AuthorFullName);
+        Assert.Equal(2, result.Items.Count);
+        Assert.Equal("Clean Code", result.Items.First().Title);
+        Assert.Equal("Robert C. Martin", result.Items.First().AuthorFullName);
     }
 
     [Fact]
-    public async Task GetAllBooksAsync_ReturnsEmptyCollection_WhenNoBooksExist()
+    public async Task GetBooksAsync_ReturnsEmptyPage_WhenNoBooksExist()
     {
-        _repositoryMock.Setup(r => r.GetAllAsync()).ReturnsAsync(new List<Book>());
+        _repositoryMock
+            .Setup(r => r.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>()))
+            .ReturnsAsync((new List<Book>(), 0));
 
-        var result = await _sut.GetAllBooksAsync();
+        var result = await _sut.GetBooksAsync(Query());
 
-        Assert.Empty(result);
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
+        Assert.Equal(0, result.TotalPages);
+        Assert.False(result.HasNext);
+        Assert.False(result.HasPrevious);
+    }
+
+    [Fact]
+    public async Task GetBooksAsync_ComputesPagingMetadata()
+    {
+        // page 2 di 7 con 127 elementi totali, size 20
+        _repositoryMock
+            .Setup(r => r.GetPagedAsync(2, 20, "id", false))
+            .ReturnsAsync((new List<Book> { new() { Id = 21, Title = "X", Author = new Author { FullName = "A" } } }, 127));
+
+        var result = await _sut.GetBooksAsync(Query(pageNumber: 2));
+
+        Assert.Equal(2, result.PageNumber);
+        Assert.Equal(20, result.PageSize);
+        Assert.Equal(127, result.TotalCount);
+        Assert.Equal(7, result.TotalPages);
+        Assert.True(result.HasPrevious);
+        Assert.True(result.HasNext);
+    }
+
+    [Fact]
+    public async Task GetBooksAsync_MapsSortDirDesc_ToDescendingTrue()
+    {
+        _repositoryMock
+            .Setup(r => r.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>()))
+            .ReturnsAsync((new List<Book>(), 0));
+
+        await _sut.GetBooksAsync(Query(sortBy: "title", sortDir: "DESC"));
+
+        _repositoryMock.Verify(r => r.GetPagedAsync(1, 20, "title", true), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetBooksAsync_FallsBackToId_WhenSortByNotAllowed()
+    {
+        _repositoryMock
+            .Setup(r => r.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>()))
+            .ReturnsAsync((new List<Book>(), 0));
+
+        await _sut.GetBooksAsync(Query(sortBy: "DROP TABLE"));
+
+        _repositoryMock.Verify(r => r.GetPagedAsync(1, 20, "id", false), Times.Once);
     }
 
     [Fact]
@@ -107,16 +161,18 @@ public class BooksServiceTests
     }
 
     [Fact]
-    public async Task GetAllBooksAsync_MapsAuthorFullName_WhenAuthorIsNull()
+    public async Task GetBooksAsync_MapsAuthorFullName_WhenAuthorIsNull()
     {
         var books = new List<Book>
         {
             new() { Id = 1, Title = "Orphan Book", AuthorId = 1, Author = null }
         };
-        _repositoryMock.Setup(r => r.GetAllAsync()).ReturnsAsync(books);
+        _repositoryMock
+            .Setup(r => r.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>()))
+            .ReturnsAsync((books, 1));
 
-        var result = await _sut.GetAllBooksAsync();
+        var result = await _sut.GetBooksAsync(Query());
 
-        Assert.Equal(string.Empty, result.First().AuthorFullName);
+        Assert.Equal(string.Empty, result.Items.First().AuthorFullName);
     }
 }

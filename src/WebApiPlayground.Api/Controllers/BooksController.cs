@@ -24,14 +24,18 @@ public class BooksController : ControllerBase
 
     [HttpGet]
     [Authorize(Policy = AuthorizationPolicies.ReadBooks)]
-    public async Task<IActionResult> GetBooks()
+    public async Task<IActionResult> GetBooks([FromQuery] BooksQueryParameters query)
     {
-        _logger.LogInformation("Fetching all books");
+        _logger.LogInformation(
+            "Fetching books — page {PageNumber} (size {PageSize}), sort {SortBy} {SortDir}",
+            query.PageNumber, query.PageSize, query.SortBy, query.SortDir);
 
-        var books = await _booksService.GetAllBooksAsync();
+        var page = await _booksService.GetBooksAsync(query);
 
-        _logger.LogInformation("Successfully retrieved {BookCount} book(s)", books.Count);
-        return Ok(books);
+        _logger.LogInformation(
+            "Successfully retrieved {BookCount} of {TotalCount} book(s) — page {PageNumber}/{TotalPages}",
+            page.Items.Count, page.TotalCount, page.PageNumber, page.TotalPages);
+        return Ok(page);
     }
 
     [HttpGet("{id:int}")]

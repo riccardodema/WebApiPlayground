@@ -18,15 +18,35 @@ public class BooksService : IBooksService
         _logger = logger;
     }
 
-    public async Task<ICollection<BookDto>> GetAllBooksAsync()
+    // Campi ammessi per l'ordinamento: whitelist contro injection di colonne arbitrarie.
+    private static readonly HashSet<string> AllowedSortFields =
+        new(StringComparer.OrdinalIgnoreCase) { "id", "title", "author" };
+
+    public async Task<PagedResult<BookDto>> GetBooksAsync(BooksQueryParameters query)
     {
-        _logger.LogDebug("Retrieving all books from repository");
+        var sortBy = AllowedSortFields.Contains(query.SortBy)
+            ? query.SortBy.ToLowerInvariant()
+            : "id";
 
-        var books = await _repository.GetAllAsync();
-        var dtos = books.Select(MapToDto).ToList();
+        if (!AllowedSortFields.Contains(query.SortBy))
+            _logger.LogWarning(
+                "Unknown sortBy '{RequestedSortBy}' — falling back to 'id'", query.SortBy);
 
-        _logger.LogDebug("Mapped {BookCount} book(s) to DTO", dtos.Count);
-        return dtos;
+        var descending = string.Equals(query.SortDir, "desc", StringComparison.OrdinalIgnoreCase);
+
+        _logger.LogDebug(
+            "Retrieving books page {PageNumber} (size {PageSize}), sort {SortBy} {SortDir}",
+            query.PageNumber, query.PageSize, sortBy, descending ? "DESC" : "ASC");
+
+        var (books, totalCount) =
+            await _repository.GetPagedAsync(query.PageNumber, query.PageSize, sortBy, descending);
+
+        var items = books.Select(MapToDto).ToList();
+
+        _logger.LogDebug(
+            "Mapped {BookCount} of {TotalCount} book(s) to DTO", items.Count, totalCount);
+
+        return new PagedResult<BookDto>(items, query.PageNumber, query.PageSize, totalCount);
     }
 
     public async Task<BookDto?> GetBookByIdAsync(int id)

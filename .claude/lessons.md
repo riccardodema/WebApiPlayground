@@ -95,6 +95,20 @@ Poi committare sia `.gitignore` sia il `.publish.xml`. Verifica: `git check-igno
 
 ---
 
+## [L07] Paginazione offset: OFFSET/FETCH senza ORDER BY deterministico → pagine non ripetibili
+
+**Approccio errato:** ordinare la query paginata solo per la colonna richiesta (es. `OrderBy(b => b.Title)`) e applicare `Skip/Take`.
+**Errore:** con valori non univoci (titoli o autori omonimi) l'ordine tra righe "pari" non è garantito; SQL Server può restituire **la stessa riga su pagine diverse** o saltarne una. Sintomo: elementi che "ballano" tra le pagine, test di sorting flaky.
+**Causa:** `OFFSET ... FETCH` richiede un ordinamento **totale** (deterministico) per essere ripetibile; un `ORDER BY` su colonna non univoca è solo parziale.
+**Soluzione:** aggiungere sempre un **tiebreaker sulla PK**: `.OrderBy(b => b.Title).ThenBy(b => b.Id)` (idem nei rami `Descending`). Vedi `BookRepository.GetPagedAsync` e la sez. *Paginazione* in `.claude/context/conventions.md`.
+
+**Note aggiuntive:**
+- Validare i parametri con `[Range]` su `BooksQueryParameters` + `[ApiController]` → 400 ProblemDetails automatico; non serve codice manuale.
+- La **whitelist** dei campi sort va nel service (mai passare la stringa utente grezza all'`OrderBy`): valori fuori whitelist → fallback a `id`, non 400.
+- `Skip/Take` + `CountAsync` su `IQueryable` traducono in `OFFSET/FETCH` + `COUNT(*)`: ok su Azure SQL Edge (DSP `Sql150`). Non materializzare con `ToList()` prima di paginare.
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 
