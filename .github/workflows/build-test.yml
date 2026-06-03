@@ -51,6 +51,15 @@ jobs:
           --results-directory TestResults
           --collect "XPlat Code Coverage"
 
+      # Architecture tests (NetArchTest): fanno rispettare le regole di layering
+      # documentate in .claude/context/architecture.md. Veloci, nessun DB/Docker.
+      - name: Architecture tests
+        run: >
+          dotnet test tests/WebApiPlayground.ArchitectureTests/WebApiPlayground.ArchitectureTests.csproj
+          --configuration ${{ inputs.build-configuration }} --no-build
+          --logger "trx;LogFileName=architecture.trx"
+          --results-directory TestResults
+
       # Integration tests use Testcontainers.MsSql; Docker is available on
       # GitHub-hosted ubuntu runners out of the box, so no service container needed.
       - name: Integration tests

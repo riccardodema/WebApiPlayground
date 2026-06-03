@@ -85,6 +85,9 @@ deploy — the deploy job is skipped (not failed) until `AZURE_LOCATION` is set.
 - **Unit** — `tests/WebApiPlayground.Tests` (xUnit + Moq), services in isolation.
 - **Integration** — `tests/WebApiPlayground.IntegrationTests`, real SQL Server spun up via
   **Testcontainers** (Docker), exercising the API end-to-end.
+- **Architecture** — `tests/WebApiPlayground.ArchitectureTests` (**NetArchTest**), enforces the
+  Clean Architecture layering rules at build time (e.g. Domain/Application must not reference
+  EF Core or ASP.NET; lower layers must not depend on the API). Fast, no DB or Docker.
 - **Infrastructure** — `tests/WebApiPlayground.IacTests`, compiles the Bicep to ARM and asserts
   the security posture / idempotency (no Azure or Docker; skipped if the Bicep CLI is absent).
 
@@ -136,6 +139,7 @@ src/
   WebApiPlayground.Api             controllers, middleware, DI, OpenAPI
 tests/
   WebApiPlayground.Tests           unit tests
+  WebApiPlayground.ArchitectureTests NetArchTest layering rules (auto-validated architecture)
   WebApiPlayground.IntegrationTests Testcontainers-based integration tests
   WebApiPlayground.IacTests        Bicep→ARM infrastructure unit tests
 database/                          SQL project (DACPAC) — schema as code

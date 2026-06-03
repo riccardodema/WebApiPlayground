@@ -7,6 +7,7 @@
 | Capire dove sta andando il progetto / cosa implementare (priorità, backlog capability backend) | `.claude/context/roadmap.md` |
 | Aggiungere risorsa REST | `.claude/context/architecture.md` + `.claude/context/conventions.md` |
 | Capire struttura/dipendenze | `.claude/context/architecture.md` |
+| Regole di layering auto-validate / architecture test (NetArchTest, dipendenze tra layer) | `.claude/context/architecture.md` (sez. regole dipendenze) + `tests/WebApiPlayground.ArchitectureTests/` |
 | Scrivere codice (entity/dto/service/repo/controller) | `.claude/context/conventions.md` |
 | Paginare/ordinare un endpoint GET lista (`PagedResult<T>`, page/size, sort) | `.claude/context/conventions.md` (sez. Paginazione) + `.claude/lessons.md` [L07] |
 | Autenticazione/autorizzazione endpoint (Entra ID, JWT, ruoli/scope, `[Authorize]`, policy) | `.claude/context/auth.md` |
