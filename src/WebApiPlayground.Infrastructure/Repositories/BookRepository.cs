@@ -110,6 +110,41 @@ public class BookRepository : IBookRepository
         return created;
     }
 
+    public async Task<Book?> UpdateAsync(Book book)
+    {
+        _logger.LogDebug("Looking up book {BookId} for update", book.Id);
+
+        var existing = await _context.Books.FindAsync(book.Id);
+
+        if (existing is null)
+        {
+            _logger.LogDebug("Book {BookId} not found in database — update skipped", book.Id);
+            return null;
+        }
+
+        existing.Title = book.Title;
+        existing.AuthorId = book.AuthorId;
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+        {
+            _logger.LogError(ex,
+                "Database error while updating book {BookId} (Title '{BookTitle}', AuthorId {AuthorId})",
+                book.Id, book.Title, book.AuthorId);
+            throw;
+        }
+
+        var updated = await _context.Books
+            .Include(b => b.Author)
+            .FirstAsync(b => b.Id == existing.Id);
+
+        _logger.LogDebug("Book {BookId} updated in database: '{BookTitle}'", updated.Id, updated.Title);
+        return updated;
+    }
+
     public async Task<bool> DeleteAsync(int id)
     {
         _logger.LogDebug("Looking up book {BookId} for deletion", id);

@@ -35,9 +35,10 @@ Se `UseExceptionHandler` sta **prima** del CorrelationId, il ProblemDetails non 
 
 ## Relazione con `[ApiController]`
 
-Le validazioni di model binding (`[Range]`, `[Required]`, …) con `[ApiController]` producono già
-un `ValidationProblemDetails` 400 automatico. Affinare quel canale (e arricchirlo con lo stesso
-enrichment) è compito della voce **validation** del Tier 1 — vedi `.claude/context/roadmap.md`.
+Le validazioni di model binding (`[Range]`, `[Required]`, …) con `[ApiController]` e quelle
+**FluentValidation** sui body confluiscono nello **stesso** 400 `ValidationProblemDetails`,
+arricchito con lo stesso `correlationId`/`traceId` (punto unico: `ProblemDetailsEnricher`).
+Dettagli in `.claude/context/validation.md`; pitfall sul serializzatore in `[L10]`.
 
 ## Test
 

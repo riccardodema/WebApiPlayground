@@ -78,6 +78,28 @@ public class BooksService : IBooksService
         return MapToDto(created);
     }
 
+    public async Task<BookDto?> UpdateBookAsync(int id, UpdateBookDto dto)
+    {
+        _logger.LogDebug(
+            "Updating book {BookId} — new Title: '{BookTitle}', AuthorId: {AuthorId}",
+            id, dto.Title, dto.AuthorId);
+
+        var book = new Book { Id = id, Title = dto.Title, AuthorId = dto.AuthorId };
+        var updated = await _repository.UpdateAsync(book);
+
+        if (updated is null)
+        {
+            _logger.LogDebug("Repository reported book {BookId} does not exist — nothing updated", id);
+            return null;
+        }
+
+        _logger.LogDebug(
+            "Book {BookId} updated, author resolved as '{AuthorName}'",
+            updated.Id, updated.Author?.FullName ?? "unknown");
+
+        return MapToDto(updated);
+    }
+
     public async Task<bool> DeleteBookAsync(int id)
     {
         _logger.LogDebug("Requesting deletion of book {BookId} from repository", id);

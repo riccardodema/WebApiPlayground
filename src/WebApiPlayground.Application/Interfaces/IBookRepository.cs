@@ -9,5 +9,9 @@ public interface IBookRepository
         int pageNumber, int pageSize, BookSortField sortBy, SortDirection direction);
     Task<Book?> GetByIdAsync(int id);
     Task<Book> CreateAsync(Book book);
+
+    /// <summary>Aggiorna un libro esistente. Restituisce l'entità aggiornata (con autore)
+    /// oppure <c>null</c> se nessun libro ha l'Id indicato.</summary>
+    Task<Book?> UpdateAsync(Book book);
     Task<bool> DeleteAsync(int id);
 }

@@ -134,6 +134,29 @@ Poi committare sia `.gitignore` sia il `.publish.xml`. Verifica: `git check-igno
 
 ---
 
+## [L10] `IProblemDetailsService` serializza sul tipo statico `ProblemDetails` → la mappa `errors` sparisce
+
+**Approccio errato:** produrre la risposta 400 di validazione costruendo un `ValidationProblemDetails`
+e scrivendolo via `IProblemDetailsService.TryWriteAsync` (per riusare `CustomizeProblemDetails` e
+ottenere `application/problem+json` "gratis").
+**Errore:** il body usciva come ProblemDetails "base" — `type`/`title`/`status`/`detail` presenti ma
+**senza la proprietà `errors`** (i campi invalidi e i relativi messaggi). Un client non sa più *cosa*
+correggere.
+**Causa:** `DefaultProblemDetailsWriter` serializza `context.ProblemDetails` sul **tipo statico**
+`ProblemDetails`, non sul runtime type: i membri di `ValidationProblemDetails` (tra cui `Errors`)
+vengono scartati dalla serializzazione polimorfica.
+**Soluzione:** per la validazione serializzare **sul tipo concreto** con
+`Response.WriteAsJsonAsync(pd, pd.GetType(), contentType: "application/problem+json")`, arricchendo a
+mano con il `ProblemDetailsEnricher` condiviso. `IProblemDetailsService` resta giusto per il
+`GlobalExceptionHandler` (che scrive un `ProblemDetails` base, senza `errors`). Vedi
+`Api/Validation/ValidationProblemDetailsFactory.cs` e `.claude/context/validation.md`.
+
+**Nota aggiuntiva:** un `ObjectResult`/`BadRequestObjectResult` con `ContentTypes` impostato a
+`application/problem+json` **non** garantisce quel content-type: la negoziazione MVC può comunque
+emettere `application/json`. Scrivere direttamente sulla `Response` è deterministico.
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

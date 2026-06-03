@@ -4,6 +4,7 @@ using WebApiPlayground.Api.Extensions;
 using WebApiPlayground.Api.HealthChecks;
 using WebApiPlayground.Api.Middleware;
 using WebApiPlayground.Api.OpenApi;
+using WebApiPlayground.Api.Validation;
 using WebApiPlayground.Application;
 using WebApiPlayground.Infrastructure;
 
@@ -21,10 +22,20 @@ try
         .ReadFrom.Configuration(context.Configuration)
         .ReadFrom.Services(services));
 
-    builder.Services.AddControllers();
+    // Il ValidationFilter (FluentValidation) gira su ogni action; le violazioni e quelle
+    // di model binding (DataAnnotations) producono la STESSA risposta 400 ProblemDetails
+    // tramite InvalidModelStateResponseFactory.
+    builder.Services.AddControllers(options => options.Filters.Add<ValidationFilter>())
+        .ConfigureApiBehaviorOptions(options =>
+            options.InvalidModelStateResponseFactory = ValidationProblemDetailsFactory.Create);
+
     builder.Services.AddApiProblemDetails();
     builder.Services.AddOpenApi(options =>
-        options.AddDocumentTransformer<BearerSecuritySchemeTransformer>());
+    {
+        options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
+        // Proietta le regole FluentValidation nello schema (required/maxLength/minimum + descrizione).
+        options.AddSchemaTransformer<FluentValidationSchemaTransformer>();
+    });
 
     builder.Services.AddApplication();
     builder.Services.AddInfrastructure(builder.Configuration);
