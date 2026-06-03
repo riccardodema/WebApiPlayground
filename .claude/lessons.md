@@ -121,6 +121,19 @@ Poi committare sia `.gitignore` sia il `.publish.xml`. Verifica: `git check-igno
 
 ---
 
+## [L09] Health-check post-deploy su un endpoint disponibile solo in Development = falso verde
+
+**Approccio errato:** usare `/openapi/v1.json` come endpoint di health-check post-deploy nelle pipeline CD.
+**Errore:** in produzione l'endpoint **non esiste** (in `Program.cs` `MapOpenApi`/`MapScalarApiReference` sono dentro `if (app.Environment.IsDevelopment())`), quindi il `curl` o falliva o — peggio — dava un verde non rappresentativo dello stato reale dell'app.
+**Causa:** confondere "un endpoint risponde" con "l'app è pronta a servire". OpenAPI è un dettaglio di sviluppo, non un segnale di salute; e qui era pure spento in prod.
+**Soluzione:** endpoint dedicati liveness/readiness sempre attivi. Il CD colpisce `/health/ready` (readiness): 200 solo se l'app è su **e** raggiunge il DB — la condizione giusta dopo publish del DACPAC + deploy. Vedi `.claude/context/health-checks.md` e `.claude/context/cicd.md`.
+
+**Note aggiuntive:**
+- **Liveness ≠ readiness.** Mai mettere check di dipendenze (DB) nel liveness: un DB giù farebbe **riavviare** l'app invece di toglierla solo dal routing. Liveness = `Predicate = _ => false`; readiness = `Predicate = c => c.Tags.Contains("ready")`.
+- I probe devono essere **anonimi** (l'orchestratore non ha token) e **mappati in ogni ambiente** (fuori dal blocco `IsDevelopment`).
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

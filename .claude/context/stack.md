@@ -8,6 +8,7 @@
 | `Scalar.AspNetCore` | API | 2.6.0 |
 | `Microsoft.EntityFrameworkCore` | Infrastructure | 10.0.0 |
 | `Microsoft.EntityFrameworkCore.SqlServer` | Infrastructure | 10.0.0 |
+| `Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore` | Infrastructure | 10.0.0 |
 | `xunit` | Tests | 2.9.3 |
 | `Moq` | Tests | 4.20.72 |
 | `Microsoft.NET.Test.Sdk` | Tests | 17.12.0 |

@@ -1,6 +1,7 @@
 using Scalar.AspNetCore;
 using Serilog;
 using WebApiPlayground.Api.Extensions;
+using WebApiPlayground.Api.HealthChecks;
 using WebApiPlayground.Api.Middleware;
 using WebApiPlayground.Api.OpenApi;
 using WebApiPlayground.Application;
@@ -56,6 +57,8 @@ try
 
     app.UseAuthentication();
     app.UseAuthorization();
+
+    app.MapApiHealthChecks();
     app.MapControllers();
 
     app.Run();

@@ -37,6 +37,8 @@ Clean Architecture, dependencies point inwards (outer layers depend on inner, ne
 | Dependency Injection per layer | `*/DependencyInjection.cs` (composed in `Api/Program.cs`) |
 | Interface segregation (testable seams) | `Application/Interfaces` (`IBookRepository`, `IBooksService`) |
 | Structured logging + correlation id | Serilog + `Api/Middleware/CorrelationIdMiddleware` |
+| RFC 7807 error responses (ProblemDetails) | `Api/ErrorHandling/GlobalExceptionHandler` |
+| Liveness / readiness health probes | `Api/HealthChecks` (`/health/live`, `/health/ready`) |
 
 ## Stack
 
@@ -101,7 +103,7 @@ The same pipeline is implemented twice to show portability across platforms:
 | Release | `ci.yml` + `cd.yml` | `ci-cd.yml` |
 
 Both: build the DACPAC, **publish the DB schema before deploying the app**, deploy to
-Azure App Service, then **health-check** `/openapi/v1.json`. The deploy stage is gated by a
+Azure App Service, then **health-check** the `/health/ready` readiness probe. The deploy stage is gated by a
 manual approval (Azure *Environment* / GitHub *Environment*), and GitHub Actions auth to
 Azure uses **OIDC federated credentials** (no long-lived secrets). Setup details in
 [.github/workflows/README.md](.github/workflows/README.md) and [.claude/context/cicd.md](.claude/context/cicd.md).
