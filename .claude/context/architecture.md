@@ -15,6 +15,12 @@ Infrastructure
 - `API` → `Application` (business) + `Infrastructure` (solo DI in `Program.cs`)
 - `Tests` → `Application` + `Domain` (mai `Infrastructure` o `API`)
 
+> Queste regole non sono solo documentate: sono **auto-validate** dagli architecture test
+> (`tests/WebApiPlayground.ArchitectureTests/`, NetArchTest). I test ispezionano l'IL degli
+> assembly e falliscono il build se un layer introduce una dipendenza vietata (es. `Domain` o
+> `Application` che referenziano EF Core / ASP.NET, oppure un layer inferiore che risale verso
+> l'API). Aggiungendo un nuovo layer o namespace, aggiornare gli anchor in `ArchitectureRules.cs`.
+
 ## Struttura cartelle
 
 ```

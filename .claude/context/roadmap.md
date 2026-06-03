@@ -17,7 +17,7 @@ Legenda stato: ✅ fatto · 🚧 in corso · ⬜ da fare
 - ✅ Paginazione offset + sort type-safe (whitelist, tiebreaker deterministico — `[L07]`)
 - ✅ Auth Entra ID (JWT, scope delegated + app-role, policy read/write — `auth.md`)
 - ✅ Logging strutturato Serilog + CorrelationId middleware (`logging.md`)
-- ✅ Test pyramid: unit (Moq), integration (Testcontainers), IaC (Bicep→ARM)
+- ✅ Test pyramid: unit (Moq), integration (Testcontainers), IaC (Bicep→ARM), architecture (NetArchTest)
 - ✅ CI/CD doppia (Azure DevOps + GitHub Actions), DB as code (DACPAC), IaC (Bicep + Key Vault)
 
 ---
@@ -62,8 +62,10 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
 
 ## Tier 5 — Meta / polish
 
-- ⬜ **Architecture tests** (NetArchTest): fanno *rispettare* le regole di layering oggi solo
-  documentate in `architecture.md` → architettura auto-validante.
+- ✅ **Architecture tests** (NetArchTest): fanno *rispettare* le regole di layering prima solo
+  documentate in `architecture.md` → architettura auto-validante. Progetto
+  `tests/WebApiPlayground.ArchitectureTests/`, agganciato alla CI insieme agli unit test (Tier 5
+  parzialmente avviato in anticipo rispetto alla cache, su richiesta). Vedi `architecture.md`.
 - ⬜ **Dockerfile + docker-compose** per l'API (oggi si containerizzano solo i test via
   Testcontainers).
 - ⬜ **Key Vault config provider** a runtime: l'app legge i secret dalla KV già creata in IaC.

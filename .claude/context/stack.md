@@ -12,6 +12,7 @@
 | `xunit` | Tests | 2.9.3 |
 | `Moq` | Tests | 4.20.72 |
 | `Microsoft.NET.Test.Sdk` | Tests | 17.12.0 |
+| `NetArchTest.Rules` | ArchitectureTests | 1.3.2 |
 
 ## URL locali
 
@@ -29,8 +30,11 @@
 # Avvio
 dotnet run --project src/WebApiPlayground.Api/WebApiPlayground.Api.csproj
 
-# Test
+# Test (unit)
 dotnet test tests/WebApiPlayground.Tests/WebApiPlayground.Tests.csproj
+
+# Test (architecture: regole di layering via NetArchTest — veloce, niente DB/Docker)
+dotnet test tests/WebApiPlayground.ArchitectureTests/WebApiPlayground.ArchitectureTests.csproj
 
 # EF Core migrations
 dotnet ef migrations add <Nome> \
