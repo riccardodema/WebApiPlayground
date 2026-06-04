@@ -63,6 +63,32 @@ public sealed class CachingBooksService : IBooksService
             tags: BookCacheKeys.BooksTag);
     }
 
+    public async Task<PagedResult<BookDetailsDto>> GetBooksDetailedAsync(BooksQueryParameters query)
+    {
+        var key = BookCacheKeys.ForListDetailed(query);
+        return await _cache.GetOrCreateAsync(
+            key,
+            async _ =>
+            {
+                _logger.LogDebug("Cache miss for {CacheKey} — fetching detailed (v2) book list from inner service", key);
+                return await _inner.GetBooksDetailedAsync(query);
+            },
+            tags: BookCacheKeys.BooksTag);
+    }
+
+    public async Task<BookDetailsDto?> GetBookDetailsByIdAsync(int id)
+    {
+        var key = BookCacheKeys.ByIdDetailed(id);
+        return await _cache.GetOrCreateAsync(
+            key,
+            async _ =>
+            {
+                _logger.LogDebug("Cache miss for {CacheKey} — fetching detailed (v2) book from inner service", key);
+                return await _inner.GetBookDetailsByIdAsync(id);
+            },
+            tags: BookCacheKeys.BooksTag);
+    }
+
     public async Task<BookDto> CreateBookAsync(CreateBookDto dto)
     {
         var created = await _inner.CreateBookAsync(dto);

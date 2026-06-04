@@ -205,4 +205,52 @@ public class BooksServiceTests
 
         Assert.Equal(string.Empty, result.Items.First().AuthorFullName);
     }
+
+    // --- v2: stessa fetch del repository, proiezione con autore annidato (AuthorDto) ---
+
+    [Fact]
+    public async Task GetBookDetailsByIdAsync_MapsNestedAuthor_WhenBookExists()
+    {
+        var book = new Book { Id = 1, Title = "Clean Code", AuthorId = 7, Author = new Author { Id = 7, FullName = "Robert C. Martin" } };
+        _repositoryMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(book);
+
+        var result = await _sut.GetBookDetailsByIdAsync(1);
+
+        Assert.NotNull(result);
+        Assert.Equal(1, result.Id);
+        Assert.Equal("Clean Code", result.Title);
+        // La differenza con v1: l'autore è un oggetto annidato con Id + FullName.
+        Assert.Equal(7, result.Author.Id);
+        Assert.Equal("Robert C. Martin", result.Author.FullName);
+    }
+
+    [Fact]
+    public async Task GetBookDetailsByIdAsync_ReturnsNull_WhenBookNotFound()
+    {
+        _repositoryMock.Setup(r => r.GetByIdAsync(999)).ReturnsAsync((Book?)null);
+
+        var result = await _sut.GetBookDetailsByIdAsync(999);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetBooksDetailedAsync_MapsNestedAuthors_AndReusesSamePagedFetch()
+    {
+        var books = new List<Book>
+        {
+            new() { Id = 1, Title = "Clean Code", AuthorId = 7, Author = new Author { Id = 7, FullName = "Robert C. Martin" } },
+        };
+        _repositoryMock
+            .Setup(r => r.GetPagedAsync(1, 20, BookSortField.Id, SortDirection.Ascending))
+            .ReturnsAsync((books, 1));
+
+        var result = await _sut.GetBooksDetailedAsync(Query());
+
+        Assert.Single(result.Items);
+        Assert.Equal(7, result.Items.First().Author.Id);
+        Assert.Equal("Robert C. Martin", result.Items.First().Author.FullName);
+        // Stessa firma di repository di v1 (DRY): cambia solo la proiezione finale.
+        _repositoryMock.Verify(r => r.GetPagedAsync(1, 20, BookSortField.Id, SortDirection.Ascending), Times.Once);
+    }
 }

@@ -27,4 +27,15 @@ public static class BookCacheKeys
     public static string ForList(BooksQueryParameters query) =>
         $"books:list:{query.PageNumber}:{query.PageSize}:" +
         $"{query.SortBy.ToLowerInvariant()}:{query.SortDir.ToLowerInvariant()}";
+
+    // La rappresentazione v2 (autore annidato) ha una FORMA diversa: chiavi distinte da v1 per non
+    // mescolare DTO diversi sotto la stessa chiave. Stesso tag Books → le scritture le invalidano comunque.
+
+    /// <summary>Chiave del singolo libro (forma v2) per Id: <c>books:v2:id:{id}</c>.</summary>
+    public static string ByIdDetailed(int id) => $"books:v2:id:{id}";
+
+    /// <summary>Chiave di una pagina di lista (forma v2): <c>books:v2:list:{page}:{size}:{sortBy}:{sortDir}</c>.</summary>
+    public static string ForListDetailed(BooksQueryParameters query) =>
+        $"books:v2:list:{query.PageNumber}:{query.PageSize}:" +
+        $"{query.SortBy.ToLowerInvariant()}:{query.SortDir.ToLowerInvariant()}";
 }

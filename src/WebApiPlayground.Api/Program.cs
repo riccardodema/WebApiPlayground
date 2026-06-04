@@ -4,8 +4,8 @@ using WebApiPlayground.Api.Extensions;
 using WebApiPlayground.Api.HealthChecks;
 using WebApiPlayground.Api.Http;
 using WebApiPlayground.Api.Middleware;
-using WebApiPlayground.Api.OpenApi;
 using WebApiPlayground.Api.Validation;
+using WebApiPlayground.Api.Versioning;
 using WebApiPlayground.Application;
 using WebApiPlayground.Infrastructure;
 
@@ -37,18 +37,9 @@ try
 
     builder.Services.AddApiProblemDetails();
     builder.Services.AddApiRateLimiting(builder.Configuration);
-    builder.Services.AddOpenApi(options =>
-    {
-        options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
-        // Proietta le regole FluentValidation nello schema (required/maxLength/minimum + descrizione).
-        options.AddSchemaTransformer<FluentValidationSchemaTransformer>();
-        // Documenta nel contratto l'idempotency dei POST (header Idempotency-Key/Replayed + 422).
-        options.AddOperationTransformer<IdempotencyOperationTransformer>();
-        // Documenta nel contratto l'HTTP caching dei GET (ETag/Cache-Control/If-None-Match + 304).
-        options.AddOperationTransformer<CachingOperationTransformer>();
-        // Documenta nel contratto il rate limiting (429 ProblemDetails + header Retry-After).
-        options.AddOperationTransformer<RateLimitingOperationTransformer>();
-    });
+    // API versioning (segmento URL) + un documento OpenAPI per versione, con i transformer condivisi
+    // (auth, validazione, idempotency, caching, rate limiting, versioning). Vedi ApiVersioningExtensions.
+    builder.Services.AddApiVersioningWithOpenApi();
 
     builder.Services.AddApplication();
     builder.Services.AddInfrastructure(builder.Configuration);
@@ -72,8 +63,17 @@ try
 
     if (app.Environment.IsDevelopment())
     {
+        // Serve /openapi/v1.json e /openapi/v2.json (un documento per versione registrato in DI).
         app.MapOpenApi();
-        app.MapScalarApiReference();
+        // Scalar con un documento per versione: l'ultima (ApiVersions.All) è quella di default.
+        app.MapScalarApiReference(options =>
+        {
+            foreach (var version in ApiVersions.All)
+            {
+                var group = ApiVersions.GroupName(version);
+                options.AddDocument(group, group);
+            }
+        });
     }
 
     if (!app.Environment.IsDevelopment())

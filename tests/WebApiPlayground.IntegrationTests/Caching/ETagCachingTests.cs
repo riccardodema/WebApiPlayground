@@ -51,7 +51,7 @@ public class ETagCachingTests : IAsyncLifetime
     {
         var book = await SeedBookAsync();
 
-        var response = await _readClient.GetAsync($"/api/books/{book.Id}");
+        var response = await _readClient.GetAsync($"/api/v1/books/{book.Id}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(response.Headers.ETag);
@@ -65,10 +65,10 @@ public class ETagCachingTests : IAsyncLifetime
     {
         var book = await SeedBookAsync();
 
-        var first = await _readClient.GetAsync($"/api/books/{book.Id}");
+        var first = await _readClient.GetAsync($"/api/v1/books/{book.Id}");
         var etag = first.Headers.ETag!;
 
-        var conditional = new HttpRequestMessage(HttpMethod.Get, $"/api/books/{book.Id}");
+        var conditional = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/books/{book.Id}");
         conditional.Headers.IfNoneMatch.Add(etag);
         var second = await _readClient.SendAsync(conditional);
 
@@ -84,7 +84,7 @@ public class ETagCachingTests : IAsyncLifetime
     {
         await SeedBookAsync();
 
-        var response = await _readClient.GetAsync("/api/books");
+        var response = await _readClient.GetAsync("/api/v1/books");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(response.Headers.ETag);
@@ -95,14 +95,14 @@ public class ETagCachingTests : IAsyncLifetime
     {
         var book = await SeedBookAsync(title: "Original");
 
-        var before = await _readClient.GetAsync($"/api/books/{book.Id}");
+        var before = await _readClient.GetAsync($"/api/v1/books/{book.Id}");
         var etagBefore = before.Headers.ETag;
 
         var update = await _writeClient.PutAsJsonAsync(
-            $"/api/books/{book.Id}", new UpdateBookDto("Updated", book.AuthorId));
+            $"/api/v1/books/{book.Id}", new UpdateBookDto("Updated", book.AuthorId));
         update.EnsureSuccessStatusCode();
 
-        var after = await _readClient.GetAsync($"/api/books/{book.Id}");
+        var after = await _readClient.GetAsync($"/api/v1/books/{book.Id}");
         var dto = await after.Content.ReadFromJsonAsync<BookDto>();
 
         Assert.Equal("Updated", dto!.Title);                 // cache server-side invalidata

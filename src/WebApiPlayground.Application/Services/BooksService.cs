@@ -21,6 +21,22 @@ public class BooksService : IBooksService
 
     public async Task<PagedResult<BookDto>> GetBooksAsync(BooksQueryParameters query)
     {
+        var (books, totalCount) = await GetPagedBooksAsync(query);
+
+        var items = books.Select(MapToDto).ToList();
+
+        _logger.LogDebug(
+            "Mapped {BookCount} of {TotalCount} book(s) to DTO", items.Count, totalCount);
+
+        return new PagedResult<BookDto>(items, query.PageNumber, query.PageSize, totalCount);
+    }
+
+    /// <summary>
+    /// Paginazione + ordinamento condivisi dalle letture v1 e v2 (DRY): cambia solo la proiezione
+    /// finale (MapToDto vs MapToDetailsDto), non il modo di interrogare il repository.
+    /// </summary>
+    private async Task<(IReadOnlyList<Book> Books, int TotalCount)> GetPagedBooksAsync(BooksQueryParameters query)
+    {
         // Il vocabolario delle stringhe di sort vive solo in BookSortParser (whitelist type-safe).
         if (!BookSortParser.TryParseField(query.SortBy, out var sortField))
             _logger.LogWarning(
@@ -33,15 +49,7 @@ public class BooksService : IBooksService
             "Retrieving books page {PageNumber} (size {PageSize}), sort {SortBy} {SortDir}",
             query.PageNumber, query.PageSize, sortField, direction);
 
-        var (books, totalCount) =
-            await _repository.GetPagedAsync(query.PageNumber, query.PageSize, sortField, direction);
-
-        var items = books.Select(MapToDto).ToList();
-
-        _logger.LogDebug(
-            "Mapped {BookCount} of {TotalCount} book(s) to DTO", items.Count, totalCount);
-
-        return new PagedResult<BookDto>(items, query.PageNumber, query.PageSize, totalCount);
+        return await _repository.GetPagedAsync(query.PageNumber, query.PageSize, sortField, direction);
     }
 
     public async Task<BookDto?> GetBookByIdAsync(int id)
@@ -114,6 +122,31 @@ public class BooksService : IBooksService
         return deleted;
     }
 
+    public async Task<PagedResult<BookDetailsDto>> GetBooksDetailedAsync(BooksQueryParameters query)
+    {
+        var (books, totalCount) = await GetPagedBooksAsync(query);
+
+        var items = books.Select(MapToDetailsDto).ToList();
+
+        _logger.LogDebug(
+            "Mapped {BookCount} of {TotalCount} book(s) to detailed (v2) DTO", items.Count, totalCount);
+
+        return new PagedResult<BookDetailsDto>(items, query.PageNumber, query.PageSize, totalCount);
+    }
+
+    public async Task<BookDetailsDto?> GetBookDetailsByIdAsync(int id)
+    {
+        _logger.LogDebug("Looking up book {BookId} in repository (v2 shape)", id);
+
+        var book = await _repository.GetByIdAsync(id);
+
+        return book is null ? null : MapToDetailsDto(book);
+    }
+
     private static BookDto MapToDto(Book book) =>
         new(book.Id, book.Title, book.Author?.FullName ?? string.Empty);
+
+    // Proiezione v2: l'autore diventa un oggetto annidato (Id + FullName) invece del nome piatto.
+    private static BookDetailsDto MapToDetailsDto(Book book) =>
+        new(book.Id, book.Title, new AuthorDto(book.Author?.Id ?? 0, book.Author?.FullName ?? string.Empty));
 }
