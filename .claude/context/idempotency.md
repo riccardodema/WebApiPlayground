@@ -72,6 +72,15 @@ istanze**. TTL da `Idempotency:Ttl` (default 24h).
 - **Atomicità cross-istanza**: il lock è in-process; due istanze potrebbero eseguire in parallelo la
   stessa chiave (raro). Hardening futuro: lock distribuito (Redis SETNX). Mitigato dallo store condiviso.
 
+## Contratto (OpenAPI)
+
+Il supporto è **documentato nello spec** (non un comportamento implicito): l'operation transformer
+[`Api/OpenApi/IdempotencyOperationTransformer.cs`](../../src/WebApiPlayground.Api/OpenApi/IdempotencyOperationTransformer.cs)
+aggiunge sui POST l'header di richiesta `Idempotency-Key`, l'header di risposta
+`Idempotency-Replayed` (sulle 2xx) e la risposta `422` — visibili in Scalar e in `/openapi/v1.json`.
+Stesso meccanismo dei transformer Bearer e FluentValidation. Un test ne verifica la presenza nel
+contratto (vedi sotto).
+
 ## Test
 
 - **Unit** ([`tests/WebApiPlayground.Tests/Idempotency`](../../tests/WebApiPlayground.Tests/Idempotency)):

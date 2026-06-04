@@ -41,6 +41,8 @@ try
         options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
         // Proietta le regole FluentValidation nello schema (required/maxLength/minimum + descrizione).
         options.AddSchemaTransformer<FluentValidationSchemaTransformer>();
+        // Documenta nel contratto l'idempotency dei POST (header Idempotency-Key/Replayed + 422).
+        options.AddOperationTransformer<IdempotencyOperationTransformer>();
     });
 
     builder.Services.AddApplication();
