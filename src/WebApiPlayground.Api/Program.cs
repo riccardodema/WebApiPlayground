@@ -46,7 +46,7 @@ try
     builder.Services.AddApplication();
     builder.Services.AddInfrastructure(builder.Configuration);
 
-    builder.Services.AddApiAuthentication(builder.Configuration);
+    builder.Services.AddApiAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddApiAuthorization();
 
     var app = builder.Build();

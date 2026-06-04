@@ -10,7 +10,7 @@
 | Regole di layering auto-validate / architecture test (NetArchTest, dipendenze tra layer) | `.claude/context/architecture.md` (sez. regole dipendenze) + `tests/WebApiPlayground.ArchitectureTests/` |
 | Scrivere codice (entity/dto/service/repo/controller) | `.claude/context/conventions.md` |
 | Paginare/ordinare un endpoint GET lista (`PagedResult<T>`, page/size, sort) | `.claude/context/conventions.md` (sez. Paginazione) + `.claude/lessons.md` [L07] |
-| Autenticazione/autorizzazione endpoint (Entra ID, JWT, ruoli/scope, `[Authorize]`, policy) | `.claude/context/auth.md` |
+| Autenticazione/autorizzazione endpoint (Entra ID, JWT, ruoli/scope, `[Authorize]`, policy); run locale senza Entra / errore `IDW10106` su Scalar | `.claude/context/auth.md` + `.claude/lessons.md` [L12] |
 | Errori/eccezioni → risposta HTTP (ProblemDetails RFC 7807, exception handler, 500, correlationId nel body) | `.claude/context/error-handling.md` |
 | Validazione input (FluentValidation, 400 ProblemDetails con `errors`, messaggi parlanti, regole nello schema OpenAPI) | `.claude/context/validation.md` + `.claude/lessons.md` [L10] |
 | Health check / probe liveness-readiness (`/health/live`, `/health/ready`, probe DB, orchestratore) | `.claude/context/health-checks.md` |

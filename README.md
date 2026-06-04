@@ -144,6 +144,11 @@ dotnet run --project src/WebApiPlayground.Api/WebApiPlayground.Api.csproj
 # OpenAPI doc: http://localhost:5242/openapi/v1.json
 ```
 
+From **VS Code press F5** (`Debug (http)`): it builds, runs and opens the browser on
+`http://localhost:5242/scalar/v1` automatically (via the `serverReadyAction` in
+[.vscode/launch.json](.vscode/launch.json)). Entra ID is optional locally — when `AzureAd` is
+unconfigured the API runs with a development auth bypass (see [auth.md](.claude/context/auth.md)).
+
 ## Development workflow
 
 `main` is protected: no direct pushes, changes land via pull request, and a PR can

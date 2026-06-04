@@ -186,6 +186,50 @@ sempre insieme.
 
 ---
 
+## [L12] `AddMicrosoftIdentityWebApi` con `AzureAd` vuoto → IDW10106 500 su OGNI richiesta (anche Scalar)
+
+**Contesto:** Entra ID configurato ma con sezione `AzureAd` ancora vuota (app registration non creata).
+Dettagli in `.claude/context/auth.md`.
+**Approccio errato:** registrare incondizionatamente
+`AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddMicrosoftIdentityWebApi(GetSection("AzureAd"))`.
+**Errore:** avviando in locale, **ogni** richiesta — inclusa `/scalar/v1` — risponde **500** con
+`IDW10106: The 'ClientId' option must be provided.`; la UI di Scalar non si apre nemmeno.
+**Causa:** Microsoft.Identity.Web valida (lazy) che `ClientId` sia presente la prima volta che le
+`JwtBearerOptions` vengono risolte. Avendo impostato Bearer come **schema di default**,
+`app.UseAuthentication()` lo risolve per *ogni* richiesta → la validazione scatta sempre → 500
+ovunque, non solo sugli endpoint protetti.
+**Soluzione:** gate *disabled-until-configured* in `AddApiAuthentication` (vedi anche il param
+`IHostEnvironment`):
+- `AzureAd:ClientId` presente → Entra reale (come prima);
+- assente + **Development** → `DevelopmentAuthHandler` (autentica `dev-user` con scope pieni, così
+  Scalar è usabile senza tenant/token);
+- assente + non-Development → eccezione allo startup (mai anonimo silenzioso in prod).
+
+**Nota aggiuntiva (verifica in locale):** `dotnet run` applica il profilo di `launchSettings.json`,
+il cui `applicationUrl` **vince** su `ASPNETCORE_URLS`. Per avviare una seconda istanza su un'altra
+porta (es. per testare senza toccare quella già attiva sulla 5242) usare
+`dotnet run --no-launch-profile --urls http://localhost:<porta>`.
+
+---
+
+## [L13] L'override Serilog `Microsoft: Warning` nasconde "Now listening on:" → F5 di VS Code non apre il browser
+
+**Contesto:** premendo F5 in VS Code (`.vscode/launch.json`, config `Debug (http)`) il browser doveva
+aprirsi su `http://localhost:5242/scalar/v1` ma non succedeva.
+**Approccio errato:** dare per scontato che il `serverReadyAction` (`pattern` su
+`\bNow listening on:\s+(https?://\S+)`, `uriFormat` `%s/scalar/v1`) bastasse.
+**Errore:** il browser non si apre mai; nessun errore evidente.
+**Causa:** la riga `Now listening on: …` è emessa da `Microsoft.Hosting.Lifetime` a livello
+**Information**, ma il Serilog `MinimumLevel.Override` ha `"Microsoft": "Warning"` → la riga è
+**soppressa**. Senza quella riga nello stdout, VS Code non rileva mai il "server ready" e non lancia
+il browser.
+**Soluzione:** aggiungere un override mirato `"Microsoft.Hosting.Lifetime": "Information"` in
+`appsettings.json` (tenendo il resto di `Microsoft` a Warning). Così riappaiono solo i messaggi di
+lifecycle (`Now listening on`, `Application started`, `Hosting environment`) e il `serverReadyAction`
+matcha. Correlato a `[L02]` (Serilog rende visibili/invisibili i log `Microsoft.*`).
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 
