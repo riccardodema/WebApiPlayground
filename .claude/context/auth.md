@@ -42,7 +42,21 @@ Semantica garantita dal framework; la policy non concede mai accesso a un token 
 
 Sono **GUID, non segreti** (la validazione usa le chiavi pubbliche del tenant): coerente con la
 regola "nessun secret nell'IaC". In dev usare user-secrets o `appsettings.Development.json`.
-Con `AzureAd` vuoto l'app parte ma i token reali non validano; i test sostituiscono lo schema.
+
+### Pattern *disabled-until-configured* (AzureAd vuoto)
+
+`AddApiAuthentication` (in `AuthenticationExtensions`) gestisce il caso in cui `AzureAd:ClientId`
+non è impostato (es. app registration non ancora creata):
+
+- **`ClientId` presente** → Microsoft Entra ID reale (JWT Bearer), comportamento di produzione.
+- **`ClientId` assente, in Development** → schema di sviluppo `DevelopmentAuthHandler`: autentica
+  ogni richiesta come `dev-user` con lo scope `Books.ReadWrite` (claim `scp`), così l'API è
+  esplorabile da Scalar **senza tenant reale e senza token**. All'avvio compare un `WRN` di bypass.
+- **`ClientId` assente, fuori Development** → eccezione allo startup (mai accesso anonimo silenzioso in prod).
+
+> ⚠️ Senza questo gate, `AddMicrosoftIdentityWebApi` con `ClientId` vuoto lancia **`IDW10106`** alla
+> prima richiesta — Bearer è lo schema di default, quindi `UseAuthentication` lo risolve per *ogni*
+> richiesta e ne fa 500, inclusa `/scalar/v1` (la UI non si apre nemmeno). Vedi `.claude/lessons.md` [L12].
 
 ## Setup Entra (una tantum, portale o CLI)
 
@@ -56,8 +70,12 @@ Con `AzureAd` vuoto l'app parte ma i token reali non validano; i test sostituisc
 
 ## Provare in locale (Scalar)
 
-`http://localhost:5242/scalar/v1` → campo *Authentication* → incolla un access token Entra valido
-(senza prefisso `Bearer `). Senza token → 401; con scope corretto → 200/201.
+`http://localhost:5242/scalar/v1`:
+
+- **Con `AzureAd` configurato**: campo *Authentication* → incolla un access token Entra valido
+  (senza prefisso `Bearer `). Senza token → 401; con scope corretto → 200/201.
+- **Con `AzureAd` vuoto (Development)**: bypass di sviluppo attivo → gli endpoint rispondono
+  direttamente, nessun token necessario (vedi pattern *disabled-until-configured* sopra).
 
 ## Test
 
