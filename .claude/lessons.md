@@ -286,6 +286,35 @@ limiter pulito) e isolano la partizione con un'identità distinta per test (head
 
 ---
 
+## [L16] API versioning (Asp.Versioning) + native OpenAPI: pacchetti, doc per versione, endpoint neutri
+
+**Contesto:** versioning per segmento URL con un documento OpenAPI per versione. Dettagli in
+`.claude/context/api-versioning.md`.
+
+**`Asp.Versioning.OpenApi` non esiste su NuGet.** La via "ufficiale" dei doci recenti
+(`.AddOpenApi(o => o.Document.AddScalarTransformers())` + `app.MapOpenApi().WithDocumentPerVersion()`
++ `app.DescribeApiVersions()`) usa un pacchetto **non pubblicato**. **Soluzione** con i pacchetti reali
+(`Asp.Versioning.Mvc` + `Asp.Versioning.Mvc.ApiExplorer`, v10 per net10): l'`ApiExplorer`
+(`GroupNameFormat="'v'VVV"`) assegna a ogni operazione un `GroupName` (`"v1"`/`"v2"`), e il documento
+OpenAPI **nativo** dello stesso nome (`AddOpenApi("v1")`, `AddOpenApi("v2")`) include solo le
+operazioni di quella versione. Scalar: ciclo su `ApiVersions.All` + `options.AddDocument(group)`.
+
+**I transformer OpenAPI esistenti vanno applicati a OGNI documento di versione**, non al solo default:
+estratti in un `OpenApiOptions.AddPlaygroundTransformers()` condiviso, invocato per ogni
+`AddOpenApi(group, ...)`. Rimossa la vecchia `AddOpenApi(o => ...)` senza nome.
+
+**Controller non versionati si rompono col versioning attivo.** Con `AssumeDefaultVersionWhenUnspecified
+= false`, un controller MVC senza `[ApiVersion]` (es. il `ThrowingTestController` dei test su
+`/__tests__`) non risolve la versione → l'endpoint non è raggiungibile e i test a valle falliscono.
+**Soluzione:** `[ApiVersionNeutral]` sugli endpoint fuori dal versioning (rotte senza segmento di
+versione). Gli health check via `MapHealthChecks` non sono interessati (non sono controller MVC).
+
+**Versione sconosciuta col segmento URL → 404, non 400.** La versione è parte della rotta: `/api/v3/...`
+non matcha alcun endpoint → 404 (con i reader header/query si avrebbe 400 + `api-supported-versions`).
+È una proprietà dello schema, non un bug — i test lo asseriscono come tale.
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

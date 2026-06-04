@@ -81,12 +81,12 @@ public class RateLimitingTests : IAsyncLifetime
         // Le prime WriteLimit scritture passano (non 429).
         for (var i = 0; i < WriteLimit; i++)
         {
-            var ok = await client.PostAsJsonAsync("/api/books", dto);
+            var ok = await client.PostAsJsonAsync("/api/v1/books", dto);
             Assert.NotEqual(HttpStatusCode.TooManyRequests, ok.StatusCode);
         }
 
         // La successiva supera il limite → 429.
-        var rejected = await client.PostAsJsonAsync("/api/books", dto);
+        var rejected = await client.PostAsJsonAsync("/api/v1/books", dto);
 
         Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
         Assert.Equal("application/problem+json", rejected.Content.Headers.ContentType?.MediaType);
@@ -107,11 +107,11 @@ public class RateLimitingTests : IAsyncLifetime
 
         for (var i = 0; i < ReadLimit; i++)
         {
-            var ok = await client.GetAsync("/api/books");
+            var ok = await client.GetAsync("/api/v1/books");
             Assert.NotEqual(HttpStatusCode.TooManyRequests, ok.StatusCode);
         }
 
-        var rejected = await client.GetAsync("/api/books");
+        var rejected = await client.GetAsync("/api/v1/books");
 
         Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
     }
@@ -125,12 +125,12 @@ public class RateLimitingTests : IAsyncLifetime
 
         // Esaurisci le scritture fino al 429 (write=2 → la terza è respinta).
         for (var i = 0; i < WriteLimit; i++)
-            await client.PostAsJsonAsync("/api/books", dto);
-        var writeRejected = await client.PostAsJsonAsync("/api/books", dto);
+            await client.PostAsJsonAsync("/api/v1/books", dto);
+        var writeRejected = await client.PostAsJsonAsync("/api/v1/books", dto);
         Assert.Equal(HttpStatusCode.TooManyRequests, writeRejected.StatusCode);
 
         // Le letture restano disponibili: la policy read è un bucket separato dalla write.
-        var read = await client.GetAsync("/api/books");
+        var read = await client.GetAsync("/api/v1/books");
         Assert.Equal(HttpStatusCode.OK, read.StatusCode);
     }
 
@@ -145,12 +145,12 @@ public class RateLimitingTests : IAsyncLifetime
 
         // A esaurisce la propria quota di scrittura fino al 429.
         for (var i = 0; i < WriteLimit; i++)
-            await clientA.PostAsJsonAsync("/api/books", dto);
-        var aRejected = await clientA.PostAsJsonAsync("/api/books", dto);
+            await clientA.PostAsJsonAsync("/api/v1/books", dto);
+        var aRejected = await clientA.PostAsJsonAsync("/api/v1/books", dto);
         Assert.Equal(HttpStatusCode.TooManyRequests, aRejected.StatusCode);
 
         // B ha una quota piena: la sua prima richiesta non è limitata.
-        var bFirst = await clientB.PostAsJsonAsync("/api/books", dto);
+        var bFirst = await clientB.PostAsJsonAsync("/api/v1/books", dto);
         Assert.NotEqual(HttpStatusCode.TooManyRequests, bFirst.StatusCode);
     }
 }

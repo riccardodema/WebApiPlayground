@@ -66,6 +66,37 @@ public class CachingBooksServiceTests
     }
 
     [Fact]
+    public async Task GetBookDetailsByIdAsync_SecondCall_IsServedFromCache()
+    {
+        _innerMock.Setup(s => s.GetBookDetailsByIdAsync(1))
+            .ReturnsAsync(new BookDetailsDto(1, "Clean Code", new AuthorDto(1, "Robert C. Martin")));
+
+        var first = await _sut.GetBookDetailsByIdAsync(1);
+        var second = await _sut.GetBookDetailsByIdAsync(1);
+
+        Assert.Equal("Robert C. Martin", first!.Author.FullName);
+        Assert.Equal("Robert C. Martin", second!.Author.FullName);
+        // Le letture v2 hanno chiavi proprie ma stesso meccanismo di cache: una sola chiamata all'inner.
+        _innerMock.Verify(s => s.GetBookDetailsByIdAsync(1), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateBookAsync_InvalidatesV2CacheToo()
+    {
+        // Le letture v2 condividono il tag "books": una scrittura deve invalidarle come quelle v1.
+        _innerMock.Setup(s => s.GetBookDetailsByIdAsync(1))
+            .ReturnsAsync(new BookDetailsDto(1, "Old", new AuthorDto(1, "Author")));
+        _innerMock.Setup(s => s.CreateBookAsync(It.IsAny<CreateBookDto>()))
+            .ReturnsAsync(new BookDto(2, "New", "Author"));
+
+        await _sut.GetBookDetailsByIdAsync(1);                   // popola la cache v2
+        await _sut.CreateBookAsync(new CreateBookDto("New", 1)); // invalida il tag "books"
+        await _sut.GetBookDetailsByIdAsync(1);                   // cache miss → ri-legge dall'inner
+
+        _innerMock.Verify(s => s.GetBookDetailsByIdAsync(1), Times.Exactly(2));
+    }
+
+    [Fact]
     public async Task CreateBookAsync_InvalidatesCache()
     {
         _innerMock.Setup(s => s.GetBookByIdAsync(1)).ReturnsAsync(new BookDto(1, "Old", "Author"));

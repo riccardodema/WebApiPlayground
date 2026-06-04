@@ -17,9 +17,9 @@ public class OpenApiContractTests
 
     public OpenApiContractTests(PlaygroundApiFactory factory) => _factory = factory;
 
-    private async Task<JsonDocument> GetOpenApiDocumentAsync()
+    private async Task<JsonDocument> GetOpenApiDocumentAsync(string document = "v1")
     {
-        var json = await _factory.CreateClient().GetStringAsync("/openapi/v1.json");
+        var json = await _factory.CreateClient().GetStringAsync($"/openapi/{document}.json");
         return JsonDocument.Parse(json);
     }
 
@@ -47,6 +47,44 @@ public class OpenApiContractTests
             "Nessuna operazione POST documenta l'header 'Idempotency-Key' nello spec OpenAPI.");
         Assert.True(post.GetProperty("responses").TryGetProperty("422", out _),
             "L'operazione POST non documenta la risposta 422 dell'idempotency.");
+    }
+
+    [Fact]
+    public async Task OpenApi_HasADocumentPerVersion_WithVersionedPaths()
+    {
+        using var v1 = await GetOpenApiDocumentAsync("v1");
+        using var v2 = await GetOpenApiDocumentAsync("v2");
+
+        Assert.True(v1.RootElement.GetProperty("paths").TryGetProperty("/api/v1/books/{id}", out _),
+            "Il documento v1 deve esporre le rotte /api/v1/books.");
+        Assert.True(v2.RootElement.GetProperty("paths").TryGetProperty("/api/v2/books/{id}", out _),
+            "Il documento v2 deve esporre le rotte /api/v2/books.");
+    }
+
+    [Fact]
+    public async Task OpenApi_V2BookSchema_HasNestedAuthorObject()
+    {
+        using var v2 = await GetOpenApiDocumentAsync("v2");
+
+        var schemas = v2.RootElement.GetProperty("components").GetProperty("schemas");
+        Assert.True(schemas.TryGetProperty("BookDetailsDto", out var bookDetails),
+            "Il documento v2 deve includere lo schema BookDetailsDto.");
+
+        // L'autore in v2 è un oggetto annidato, non una stringa piatta come in v1.
+        var author = bookDetails.GetProperty("properties").GetProperty("author");
+        Assert.True(author.TryGetProperty("$ref", out _) || author.GetProperty("type").GetString() == "object",
+            "In v2 'author' deve essere un oggetto annidato (AuthorDto).");
+    }
+
+    [Fact]
+    public async Task OpenApi_DocumentsSupportedVersionsHeader_OnResponses()
+    {
+        using var document = await GetOpenApiDocumentAsync("v1");
+
+        var get = Operations(document, "get").First();
+        var headers = get.GetProperty("responses").GetProperty("200").GetProperty("headers");
+        Assert.True(headers.TryGetProperty("api-supported-versions", out _),
+            "Le risposte devono documentare l'header api-supported-versions.");
     }
 
     [Fact]

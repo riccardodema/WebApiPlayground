@@ -64,12 +64,12 @@ public class BooksControllerTests : IAsyncLifetime
         return await db.Books.FindAsync(id);
     }
 
-    // --- GET /api/books ---
+    // --- GET /api/v1/books ---
 
     [Fact]
     public async Task GetBooks_WhenEmpty_Returns200WithEmptyPage()
     {
-        var response = await _readClient.GetAsync("/api/books");
+        var response = await _readClient.GetAsync("/api/v1/books");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var page = await response.Content.ReadFromJsonAsync<PagedResult<BookDto>>();
@@ -88,7 +88,7 @@ public class BooksControllerTests : IAsyncLifetime
         await SeedBookAsync(author.Id, "1984");
         await SeedBookAsync(author.Id, "Animal Farm");
 
-        var response = await _readClient.GetAsync("/api/books");
+        var response = await _readClient.GetAsync("/api/v1/books");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var page = await response.Content.ReadFromJsonAsync<PagedResult<BookDto>>();
@@ -107,7 +107,7 @@ public class BooksControllerTests : IAsyncLifetime
         await SeedBookAsync(author.Id, "B");
         await SeedBookAsync(author.Id, "C");
 
-        var response = await _readClient.GetAsync("/api/books?pageNumber=1&pageSize=2");
+        var response = await _readClient.GetAsync("/api/v1/books?pageNumber=1&pageSize=2");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var page = await response.Content.ReadFromJsonAsync<PagedResult<BookDto>>();
@@ -127,7 +127,7 @@ public class BooksControllerTests : IAsyncLifetime
         await SeedBookAsync(author.Id, "Zulu");
         await SeedBookAsync(author.Id, "Mike");
 
-        var response = await _readClient.GetAsync("/api/books?sortBy=title&sortDir=desc");
+        var response = await _readClient.GetAsync("/api/v1/books?sortBy=title&sortDir=desc");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var page = await response.Content.ReadFromJsonAsync<PagedResult<BookDto>>();
@@ -136,9 +136,9 @@ public class BooksControllerTests : IAsyncLifetime
     }
 
     [Theory]
-    [InlineData("/api/books?pageSize=0")]
-    [InlineData("/api/books?pageNumber=0")]
-    [InlineData("/api/books?pageSize=101")]
+    [InlineData("/api/v1/books?pageSize=0")]
+    [InlineData("/api/v1/books?pageNumber=0")]
+    [InlineData("/api/v1/books?pageSize=101")]
     public async Task GetBooks_WithInvalidPagingParams_Returns400(string url)
     {
         var response = await _readClient.GetAsync(url);
@@ -146,7 +146,7 @@ public class BooksControllerTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    // --- GET /api/books/{id} ---
+    // --- GET /api/v1/books/{id} ---
 
     [Fact]
     public async Task GetBookById_WhenExists_Returns200WithCorrectData()
@@ -154,7 +154,7 @@ public class BooksControllerTests : IAsyncLifetime
         var author = await SeedAuthorAsync("J.K. Rowling");
         var book = await SeedBookAsync(author.Id, "Harry Potter");
 
-        var response = await _readClient.GetAsync($"/api/books/{book.Id}");
+        var response = await _readClient.GetAsync($"/api/v1/books/{book.Id}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var dto = await response.Content.ReadFromJsonAsync<BookDto>();
@@ -167,12 +167,12 @@ public class BooksControllerTests : IAsyncLifetime
     [Fact]
     public async Task GetBookById_WhenNotFound_Returns404()
     {
-        var response = await _readClient.GetAsync("/api/books/99999");
+        var response = await _readClient.GetAsync("/api/v1/books/99999");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    // --- POST /api/books ---
+    // --- POST /api/v1/books ---
 
     [Fact]
     public async Task CreateBook_Returns201AndPersistsBookInDb()
@@ -180,7 +180,7 @@ public class BooksControllerTests : IAsyncLifetime
         var author = await SeedAuthorAsync("Fyodor Dostoevsky");
         var dto = new CreateBookDto("Crime and Punishment", author.Id);
 
-        var response = await _writeClient.PostAsJsonAsync("/api/books", dto);
+        var response = await _writeClient.PostAsJsonAsync("/api/v1/books", dto);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
@@ -202,14 +202,14 @@ public class BooksControllerTests : IAsyncLifetime
         var author = await SeedAuthorAsync();
         var dto = new CreateBookDto("New Book", author.Id);
 
-        var response = await _writeClient.PostAsJsonAsync("/api/books", dto);
+        var response = await _writeClient.PostAsJsonAsync("/api/v1/books", dto);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.NotNull(response.Headers.Location);
 
         var created = await response.Content.ReadFromJsonAsync<BookDto>();
         Assert.NotNull(created);
-        Assert.EndsWith($"/api/books/{created.Id}", response.Headers.Location!.ToString(),
+        Assert.EndsWith($"/api/v1/books/{created.Id}", response.Headers.Location!.ToString(),
             StringComparison.OrdinalIgnoreCase);
     }
 
@@ -220,19 +220,19 @@ public class BooksControllerTests : IAsyncLifetime
         await SeedBookAsync(author.Id, "Existing Book");
 
         var dto = new CreateBookDto("Brand New Book", author.Id);
-        await _writeClient.PostAsJsonAsync("/api/books", dto);
+        await _writeClient.PostAsJsonAsync("/api/v1/books", dto);
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlaygroundDbContext>();
         Assert.Equal(2, await db.Books.CountAsync());
     }
 
-    // --- POST /api/books: validazione input (400 ProblemDetails) ---
+    // --- POST /api/v1/books: validazione input (400 ProblemDetails) ---
 
     [Fact]
     public async Task CreateBook_WithEmptyTitle_Returns400ProblemDetailsWithFieldError()
     {
-        var response = await _writeClient.PostAsJsonAsync("/api/books", new CreateBookDto("", 1));
+        var response = await _writeClient.PostAsJsonAsync("/api/v1/books", new CreateBookDto("", 1));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
@@ -247,7 +247,7 @@ public class BooksControllerTests : IAsyncLifetime
     [Fact]
     public async Task CreateBook_WithNonPositiveAuthorId_Returns400()
     {
-        var response = await _writeClient.PostAsJsonAsync("/api/books", new CreateBookDto("Valid Title", 0));
+        var response = await _writeClient.PostAsJsonAsync("/api/v1/books", new CreateBookDto("Valid Title", 0));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
@@ -260,7 +260,7 @@ public class BooksControllerTests : IAsyncLifetime
     {
         var dto = new CreateBookDto(new string('a', 101), 1);
 
-        var response = await _writeClient.PostAsJsonAsync("/api/books", dto);
+        var response = await _writeClient.PostAsJsonAsync("/api/v1/books", dto);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
@@ -271,7 +271,7 @@ public class BooksControllerTests : IAsyncLifetime
     [Fact]
     public async Task CreateBook_WithInvalidInput_ProblemDetailsCarriesCorrelationId()
     {
-        var response = await _writeClient.PostAsJsonAsync("/api/books", new CreateBookDto("", 0));
+        var response = await _writeClient.PostAsJsonAsync("/api/v1/books", new CreateBookDto("", 0));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.True(response.Headers.TryGetValues("X-Correlation-Id", out var headerValues));
@@ -285,14 +285,14 @@ public class BooksControllerTests : IAsyncLifetime
     [Fact]
     public async Task CreateBook_WithInvalidInput_IsNotPersisted()
     {
-        await _writeClient.PostAsJsonAsync("/api/books", new CreateBookDto("", 0));
+        await _writeClient.PostAsJsonAsync("/api/v1/books", new CreateBookDto("", 0));
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlaygroundDbContext>();
         Assert.Equal(0, await db.Books.CountAsync());
     }
 
-    // --- PUT /api/books/{id} ---
+    // --- PUT /api/v1/books/{id} ---
 
     [Fact]
     public async Task UpdateBook_WhenExists_Returns200AndPersistsChanges()
@@ -302,7 +302,7 @@ public class BooksControllerTests : IAsyncLifetime
         var newAuthor = await SeedAuthorAsync("New Author");
 
         var response = await _writeClient.PutAsJsonAsync(
-            $"/api/books/{book.Id}", new UpdateBookDto("Updated Title", newAuthor.Id));
+            $"/api/v1/books/{book.Id}", new UpdateBookDto("Updated Title", newAuthor.Id));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var updated = await response.Content.ReadFromJsonAsync<BookDto>();
@@ -323,7 +323,7 @@ public class BooksControllerTests : IAsyncLifetime
         var author = await SeedAuthorAsync();
 
         var response = await _writeClient.PutAsJsonAsync(
-            "/api/books/99999", new UpdateBookDto("Whatever", author.Id));
+            "/api/v1/books/99999", new UpdateBookDto("Whatever", author.Id));
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -335,7 +335,7 @@ public class BooksControllerTests : IAsyncLifetime
         var book = await SeedBookAsync(author.Id, "Keep This Title");
 
         var response = await _writeClient.PutAsJsonAsync(
-            $"/api/books/{book.Id}", new UpdateBookDto("", 0));
+            $"/api/v1/books/{book.Id}", new UpdateBookDto("", 0));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
@@ -351,7 +351,7 @@ public class BooksControllerTests : IAsyncLifetime
     [Fact]
     public async Task UpdateBook_WithReadScopeOnly_Returns403()
     {
-        var response = await _readClient.PutAsJsonAsync("/api/books/1", new UpdateBookDto("X", 1));
+        var response = await _readClient.PutAsJsonAsync("/api/v1/books/1", new UpdateBookDto("X", 1));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -361,12 +361,12 @@ public class BooksControllerTests : IAsyncLifetime
     {
         var client = _factory.CreateAnonymousClient();
 
-        var response = await client.PutAsJsonAsync("/api/books/1", new UpdateBookDto("X", 1));
+        var response = await client.PutAsJsonAsync("/api/v1/books/1", new UpdateBookDto("X", 1));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
-    // --- DELETE /api/books/{id} ---
+    // --- DELETE /api/v1/books/{id} ---
 
     [Fact]
     public async Task DeleteBook_WhenExists_Returns204AndRemovesBookFromDb()
@@ -374,7 +374,7 @@ public class BooksControllerTests : IAsyncLifetime
         var author = await SeedAuthorAsync();
         var book = await SeedBookAsync(author.Id, "To Delete");
 
-        var response = await _writeClient.DeleteAsync($"/api/books/{book.Id}");
+        var response = await _writeClient.DeleteAsync($"/api/v1/books/{book.Id}");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
@@ -385,7 +385,7 @@ public class BooksControllerTests : IAsyncLifetime
     [Fact]
     public async Task DeleteBook_WhenNotFound_Returns404()
     {
-        var response = await _writeClient.DeleteAsync("/api/books/99999");
+        var response = await _writeClient.DeleteAsync("/api/v1/books/99999");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -397,7 +397,7 @@ public class BooksControllerTests : IAsyncLifetime
         var bookToDelete = await SeedBookAsync(author.Id, "Delete Me");
         var bookToKeep = await SeedBookAsync(author.Id, "Keep Me");
 
-        await _writeClient.DeleteAsync($"/api/books/{bookToDelete.Id}");
+        await _writeClient.DeleteAsync($"/api/v1/books/{bookToDelete.Id}");
 
         var dbBook = await FindBookInDbAsync(bookToKeep.Id);
         Assert.NotNull(dbBook);
@@ -411,7 +411,7 @@ public class BooksControllerTests : IAsyncLifetime
     {
         var client = _factory.CreateAnonymousClient();
 
-        var response = await client.GetAsync("/api/books");
+        var response = await client.GetAsync("/api/v1/books");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -421,7 +421,7 @@ public class BooksControllerTests : IAsyncLifetime
     {
         var client = _factory.CreateAnonymousClient();
 
-        var response = await client.PostAsJsonAsync("/api/books", new CreateBookDto("X", 1));
+        var response = await client.PostAsJsonAsync("/api/v1/books", new CreateBookDto("X", 1));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -431,7 +431,7 @@ public class BooksControllerTests : IAsyncLifetime
     {
         var client = _factory.CreateAnonymousClient();
 
-        var response = await client.DeleteAsync("/api/books/1");
+        var response = await client.DeleteAsync("/api/v1/books/1");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -441,7 +441,7 @@ public class BooksControllerTests : IAsyncLifetime
     [Fact]
     public async Task CreateBook_WithReadScopeOnly_Returns403()
     {
-        var response = await _readClient.PostAsJsonAsync("/api/books", new CreateBookDto("X", 1));
+        var response = await _readClient.PostAsJsonAsync("/api/v1/books", new CreateBookDto("X", 1));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -449,7 +449,7 @@ public class BooksControllerTests : IAsyncLifetime
     [Fact]
     public async Task DeleteBook_WithReadScopeOnly_Returns403()
     {
-        var response = await _readClient.DeleteAsync("/api/books/1");
+        var response = await _readClient.DeleteAsync("/api/v1/books/1");
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -461,7 +461,7 @@ public class BooksControllerTests : IAsyncLifetime
     {
         var client = _factory.CreateClientWithAppRoles(BooksPermissions.AppRead);
 
-        var response = await client.GetAsync("/api/books");
+        var response = await client.GetAsync("/api/v1/books");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -472,7 +472,7 @@ public class BooksControllerTests : IAsyncLifetime
         var author = await SeedAuthorAsync();
         var client = _factory.CreateClientWithAppRoles(BooksPermissions.AppReadWrite);
 
-        var response = await client.PostAsJsonAsync("/api/books", new CreateBookDto("Daemon Book", author.Id));
+        var response = await client.PostAsJsonAsync("/api/v1/books", new CreateBookDto("Daemon Book", author.Id));
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
@@ -482,7 +482,7 @@ public class BooksControllerTests : IAsyncLifetime
     {
         var client = _factory.CreateClientWithAppRoles(BooksPermissions.AppRead);
 
-        var response = await client.PostAsJsonAsync("/api/books", new CreateBookDto("X", 1));
+        var response = await client.PostAsJsonAsync("/api/v1/books", new CreateBookDto("X", 1));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }

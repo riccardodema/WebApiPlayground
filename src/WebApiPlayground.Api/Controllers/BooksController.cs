@@ -1,22 +1,28 @@
+using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using WebApiPlayground.Api.Authorization;
 using WebApiPlayground.Api.RateLimiting;
+using WebApiPlayground.Api.Versioning;
 using WebApiPlayground.Application.DTOs;
 using WebApiPlayground.Application.Interfaces;
 
 namespace WebApiPlayground.Api.Controllers;
 
 /// <summary>
-/// CRUD sui libri. Tutti gli endpoint richiedono un access token (Entra ID) e una policy
-/// read/write. Gli errori sono restituiti come <c>application/problem+json</c> (RFC 7807):
-/// 400 per input non valido (con i campi e i messaggi nella proprietà <c>errors</c>),
-/// 401/403 per autenticazione/autorizzazione, 404 se la risorsa non esiste, 429 se si supera il
-/// rate limit (letture e scritture hanno policy distinte; vedi <c>.claude/context/rate-limiting.md</c>).
+/// CRUD sui libri, versionato per segmento URL (<c>/api/v{version}/books</c>). Le <b>scritture</b>
+/// (POST/PUT/DELETE) servono <b>entrambe</b> le versioni (contratto di richiesta invariato); le
+/// <b>letture v1</b> (<c>BookDto</c>, autore piatto) vivono qui, mentre le letture v2 (autore annidato)
+/// stanno in <see cref="BooksV2Controller"/>. Tutti gli endpoint richiedono un access token (Entra ID)
+/// e una policy read/write. Errori come <c>application/problem+json</c> (RFC 7807): 400 input non
+/// valido, 401/403 auth, 404 risorsa assente, 429 rate limit. Vedi
+/// <c>.claude/context/api-versioning.md</c>.
 /// </summary>
 [ApiController]
-[Route("api/[controller]")]
+[ApiVersion(ApiVersions.V1)]
+[ApiVersion(ApiVersions.V2)]
+[Route(ApiRoutes.Books)]
 [Authorize]
 [Produces("application/json")]
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -44,6 +50,7 @@ public class BooksController : ControllerBase
     /// <response code="200">Pagina di libri con i metadati di paginazione.</response>
     /// <response code="400">Parametri di paginazione fuori range (es. <c>pageSize=0</c> o &gt; 100).</response>
     [HttpGet]
+    [MapToApiVersion(ApiVersions.V1)]
     [Authorize(Policy = AuthorizationPolicies.ReadBooks)]
     [EnableRateLimiting(RateLimitingOptions.PolicyNames.Read)]
     [ProducesResponseType(typeof(PagedResult<BookDto>), StatusCodes.Status200OK)]
@@ -67,6 +74,7 @@ public class BooksController : ControllerBase
     /// <response code="200">Il libro richiesto.</response>
     /// <response code="404">Nessun libro con l'Id indicato.</response>
     [HttpGet("{id:int}")]
+    [MapToApiVersion(ApiVersions.V1)]
     [Authorize(Policy = AuthorizationPolicies.ReadBooks)]
     [EnableRateLimiting(RateLimitingOptions.PolicyNames.Read)]
     [ProducesResponseType(typeof(BookDto), StatusCodes.Status200OK)]

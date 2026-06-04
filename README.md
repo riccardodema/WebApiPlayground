@@ -40,6 +40,7 @@ Clean Architecture, dependencies point inwards (outer layers depend on inner, ne
 | RFC 7807 error responses (ProblemDetails) | `Api/ErrorHandling/GlobalExceptionHandler` |
 | Liveness / readiness health probes | `Api/HealthChecks` (`/health/live`, `/health/ready`) |
 | Rate limiting (sliding window, per-client) | `Api/RateLimiting`, `Api/Extensions/RateLimitingExtensions` |
+| API versioning (URL segment, doc per version) | `Api/Versioning`, `Api/Extensions/ApiVersioningExtensions` |
 
 ## Stack
 
@@ -48,6 +49,7 @@ Clean Architecture, dependencies point inwards (outer layers depend on inner, ne
 - **Serilog** structured logging
 - **HybridCache via FusionCache** (Redis-ready) + **HTTP caching (ETag)**
 - **Native .NET rate limiting** (`System.Threading.RateLimiting`, sliding window)
+- **Asp.Versioning** for API versioning (URL segment, OpenAPI document per version)
 - **xUnit · Moq · Testcontainers.MsSql** for testing
 - **SQL Database Project (DACPAC)** for the database schema
 
@@ -117,6 +119,34 @@ client can call, and beyond the cap answers **`429 Too Many Requests`** instead 
 
 Limits are config-driven and read lazily at request time. Details:
 [`.claude/context/rate-limiting.md`](.claude/context/rate-limiting.md).
+
+## API versioning
+
+An API with real clients can't change its contract freely: renaming a field, nesting an object or
+dropping a property **breaks** existing callers. Versioning lets multiple contracts (`v1`, `v2`, …)
+**coexist** on the same resource, so old clients stay on `v1` while new ones adopt `v2` — evolution
+without a big-bang. Done with **Asp.Versioning** (the maintained successor of the old
+`Mvc.Versioning`), **URL-segment** scheme:
+
+- **Version in the URL** (`/api/v1/books`, `/api/v2/books`) — the most visible scheme: a recruiter
+  sees it in Scalar, a client tries it from the browser, and it yields **one OpenAPI document per
+  version** (a version selector in Scalar, `/openapi/v1.json` + `/openapi/v2.json`).
+- **A worked v2**: the read representation evolves — the author goes from a flat string
+  (`authorFullName`) to a **nested object** (`author: { id, fullName }`). That's a breaking response
+  change, the textbook reason to version. The data fetch is shared with v1 (DRY); only the projection
+  differs per version.
+- **Writes are shared** across versions (the request contract is unchanged), so there's no duplicated
+  write logic — one `BooksController` serves both, while a `BooksV2Controller` carries the evolved reads.
+- **Discoverable & documented**: `ReportApiVersions` emits `api-supported-versions` /
+  `api-deprecated-versions` on every response (documented in the OpenAPI contract), so a client learns
+  which versions exist from any call. Deprecation + RFC 8594 `Sunset` are documented as the retirement
+  path (not triggered here, since no version is retired).
+- **Composes with everything**: each versioned operation keeps auth, rate limiting, idempotency, ETag
+  caching and ProblemDetails — the OpenAPI transformers are shared across version documents.
+
+Versioning is orthogonal to **optimistic concurrency** (rowversion/ETag `If-Match` on `PUT`), which
+the roadmap pairs with it; that lands as its own focused change. Details:
+[`.claude/context/api-versioning.md`](.claude/context/api-versioning.md).
 
 ## Database as code
 

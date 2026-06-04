@@ -52,7 +52,7 @@ public class IdempotencyTests : IAsyncLifetime
 
     private HttpRequestMessage PostBook(string idempotencyKey, CreateBookDto dto)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/books")
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/books")
         {
             Content = JsonContent.Create(dto),
         };
@@ -105,8 +105,8 @@ public class IdempotencyTests : IAsyncLifetime
         var authorId = await SeedAuthorAsync();
         var dto = new CreateBookDto("Solaris", authorId);
 
-        var first = await _writeClient.PostAsJsonAsync("/api/books", dto);
-        var second = await _writeClient.PostAsJsonAsync("/api/books", dto);
+        var first = await _writeClient.PostAsJsonAsync("/api/v1/books", dto);
+        var second = await _writeClient.PostAsJsonAsync("/api/v1/books", dto);
 
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
         Assert.Equal(HttpStatusCode.Created, second.StatusCode);

@@ -54,7 +54,12 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
   (RFC 7807, stesso `correlationId`/`traceId`) con header `Retry-After`; 429 documentato nel contratto
   OpenAPI. In-memory per-istanza (Redis = percorso di scale-out, come cache/idempotency). Vedi
   `.claude/context/rate-limiting.md`, `[L15]`.
-- ⬜ **API versioning** (`Asp.Versioning`) + **optimistic concurrency** (rowversion/ETag) sul PUT.
+- ✅ **API versioning** (`Asp.Versioning`): schema per **segmento URL** (`/api/v{n}/books`), un
+  **documento OpenAPI per versione** in Scalar, esempio **v2** con DTO evoluto (autore annidato) e
+  scritture condivise tra le versioni; `ReportApiVersions` → header `api-supported-versions`. Vedi
+  `.claude/context/api-versioning.md`, `[L16]`.
+- ⬜ **Optimistic concurrency** (rowversion/ETag + `If-Match`) sul PUT → 412/428: PR dedicata
+  (separata dal versioning per "una capability per PR"). Riusa l'infrastruttura ETag esistente.
 
 ## Tier 3 — Observability distribuita
 
