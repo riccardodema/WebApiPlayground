@@ -5,9 +5,10 @@ using Xunit;
 namespace WebApiPlayground.IntegrationTests.OpenApi;
 
 /// <summary>
-/// Il contratto tra client e API dev'essere leggibile nello spec OpenAPI: qui si verifica che il
-/// supporto all'idempotency (header <c>Idempotency-Key</c> + risposta 422) sia effettivamente
-/// documentato sul POST, non solo implementato nel middleware.
+/// Il contratto tra client e API dev'essere leggibile nello spec OpenAPI: qui si verifica che i
+/// comportamenti guidati da header — idempotency sui POST (<c>Idempotency-Key</c> + 422) e HTTP
+/// caching sui GET (<c>If-None-Match</c>/<c>ETag</c> + 304) — siano effettivamente documentati,
+/// non solo implementati nel middleware/filter.
 /// </summary>
 [Collection("Integration")]
 public class OpenApiContractTests
@@ -16,32 +17,52 @@ public class OpenApiContractTests
 
     public OpenApiContractTests(PlaygroundApiFactory factory) => _factory = factory;
 
+    private async Task<JsonDocument> GetOpenApiDocumentAsync()
+    {
+        var json = await _factory.CreateClient().GetStringAsync("/openapi/v1.json");
+        return JsonDocument.Parse(json);
+    }
+
+    /// <summary>Operazioni (di un dato verbo) presenti nel documento, tra tutti i path.</summary>
+    private static IEnumerable<JsonElement> Operations(JsonDocument document, string httpVerb) =>
+        document.RootElement
+            .GetProperty("paths")
+            .EnumerateObject()
+            .Where(path => path.Value.TryGetProperty(httpVerb, out _))
+            .Select(path => path.Value.GetProperty(httpVerb));
+
+    private static bool HasHeaderParameter(JsonElement operation, string name) =>
+        operation.TryGetProperty("parameters", out var parameters) &&
+        parameters.EnumerateArray().Any(p =>
+            p.GetProperty("name").GetString() == name && p.GetProperty("in").GetString() == "header");
+
     [Fact]
     public async Task OpenApi_DocumentsIdempotencyKeyHeaderAnd422_OnPost()
     {
-        var client = _factory.CreateClient();
+        using var document = await GetOpenApiDocumentAsync();
 
-        var json = await client.GetStringAsync("/openapi/v1.json");
-        using var document = JsonDocument.Parse(json);
+        var post = Operations(document, "post").FirstOrDefault(p => HasHeaderParameter(p, "Idempotency-Key"));
 
-        // Cerca un'operazione POST che dichiari l'header Idempotency-Key (robusto al casing del path).
-        var postWithIdempotency = document.RootElement
-            .GetProperty("paths")
-            .EnumerateObject()
-            .Select(path => path.Value)
-            .Where(operations => operations.TryGetProperty("post", out _))
-            .Select(operations => operations.GetProperty("post"))
-            .FirstOrDefault(post =>
-                post.TryGetProperty("parameters", out var parameters) &&
-                parameters.EnumerateArray().Any(p =>
-                    p.GetProperty("name").GetString() == "Idempotency-Key" &&
-                    p.GetProperty("in").GetString() == "header"));
-
-        Assert.True(postWithIdempotency.ValueKind == JsonValueKind.Object,
+        Assert.True(post.ValueKind == JsonValueKind.Object,
             "Nessuna operazione POST documenta l'header 'Idempotency-Key' nello spec OpenAPI.");
-
-        // La stessa operazione deve documentare la risposta 422 (riuso chiave con payload diverso).
-        Assert.True(postWithIdempotency.GetProperty("responses").TryGetProperty("422", out _),
+        Assert.True(post.GetProperty("responses").TryGetProperty("422", out _),
             "L'operazione POST non documenta la risposta 422 dell'idempotency.");
+    }
+
+    [Fact]
+    public async Task OpenApi_DocumentsConditionalGetContract_OnGet()
+    {
+        using var document = await GetOpenApiDocumentAsync();
+
+        var get = Operations(document, "get").FirstOrDefault(g => HasHeaderParameter(g, "If-None-Match"));
+
+        Assert.True(get.ValueKind == JsonValueKind.Object,
+            "Nessuna operazione GET documenta l'header 'If-None-Match' nello spec OpenAPI.");
+        Assert.True(get.GetProperty("responses").TryGetProperty("304", out _),
+            "L'operazione GET non documenta la risposta 304 Not Modified.");
+
+        // La 200 espone l'header di risposta ETag.
+        var okHeaders = get.GetProperty("responses").GetProperty("200").GetProperty("headers");
+        Assert.True(okHeaders.TryGetProperty("ETag", out _), "La 200 non documenta l'header di risposta 'ETag'.");
     }
 }
