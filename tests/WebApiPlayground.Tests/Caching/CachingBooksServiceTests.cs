@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using WebApiPlayground.Application.Caching;
+using WebApiPlayground.Application.Concurrency;
 using WebApiPlayground.Application.DTOs;
 using WebApiPlayground.Application.Interfaces;
 using Xunit;
@@ -17,6 +18,8 @@ namespace WebApiPlayground.Tests.Caching;
 /// </summary>
 public class CachingBooksServiceTests
 {
+    private static readonly byte[] Version = [1, 2, 3, 4, 5, 6, 7, 8];
+
     private readonly Mock<IBooksService> _innerMock = new();
     private readonly HybridCache _cache;
     private readonly CachingBooksService _sut;
@@ -114,12 +117,30 @@ public class CachingBooksServiceTests
     public async Task UpdateBookAsync_WhenNotFound_DoesNotInvalidateCache()
     {
         _innerMock.Setup(s => s.GetBookByIdAsync(1)).ReturnsAsync(new BookDto(1, "Title", "Author"));
-        _innerMock.Setup(s => s.UpdateBookAsync(99, It.IsAny<UpdateBookDto>()))
+        _innerMock.Setup(s => s.UpdateBookAsync(99, It.IsAny<UpdateBookDto>(), It.IsAny<byte[]>()))
             .ReturnsAsync((BookDto?)null); // libro inesistente → niente è cambiato
 
-        await _sut.GetBookByIdAsync(1);                            // popola la cache
-        await _sut.UpdateBookAsync(99, new UpdateBookDto("X", 1)); // no-op → nessuna invalidazione
-        await _sut.GetBookByIdAsync(1);                            // ancora cache hit
+        await _sut.GetBookByIdAsync(1);                                  // popola la cache
+        await _sut.UpdateBookAsync(99, new UpdateBookDto("X", 1), Version); // no-op → nessuna invalidazione
+        await _sut.GetBookByIdAsync(1);                                  // ancora cache hit
+
+        _innerMock.Verify(s => s.GetBookByIdAsync(1), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateBookAsync_OnConcurrencyConflict_DoesNotInvalidateCache()
+    {
+        // Il conflitto (412) significa che nulla è cambiato nel DB: la cache NON va invalidata.
+        _innerMock.Setup(s => s.GetBookByIdAsync(1)).ReturnsAsync(new BookDto(1, "Title", "Author"));
+        _innerMock.Setup(s => s.UpdateBookAsync(1, It.IsAny<UpdateBookDto>(), It.IsAny<byte[]>()))
+            .ThrowsAsync(new ConcurrencyConflictException(1));
+
+        await _sut.GetBookByIdAsync(1); // popola la cache
+
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(
+            () => _sut.UpdateBookAsync(1, new UpdateBookDto("X", 1), Version));
+
+        await _sut.GetBookByIdAsync(1); // ancora cache hit (nessuna invalidazione)
 
         _innerMock.Verify(s => s.GetBookByIdAsync(1), Times.Once);
     }
@@ -128,11 +149,11 @@ public class CachingBooksServiceTests
     public async Task DeleteBookAsync_WhenDeleted_InvalidatesCache()
     {
         _innerMock.Setup(s => s.GetBookByIdAsync(1)).ReturnsAsync(new BookDto(1, "Title", "Author"));
-        _innerMock.Setup(s => s.DeleteBookAsync(1)).ReturnsAsync(true);
+        _innerMock.Setup(s => s.DeleteBookAsync(1, It.IsAny<byte[]>())).ReturnsAsync(true);
 
-        await _sut.GetBookByIdAsync(1); // popola la cache
-        await _sut.DeleteBookAsync(1);  // invalida
-        await _sut.GetBookByIdAsync(1); // ri-legge
+        await _sut.GetBookByIdAsync(1);    // popola la cache
+        await _sut.DeleteBookAsync(1, Version); // invalida
+        await _sut.GetBookByIdAsync(1);    // ri-legge
 
         _innerMock.Verify(s => s.GetBookByIdAsync(1), Times.Exactly(2));
     }

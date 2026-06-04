@@ -19,6 +19,8 @@ public static class OpenApiTransformerRegistration
         options.AddOperationTransformer<IdempotencyOperationTransformer>();
         // Documenta HTTP caching dei GET (ETag/Cache-Control/If-None-Match + 304).
         options.AddOperationTransformer<CachingOperationTransformer>();
+        // Documenta l'optimistic concurrency delle scritture (If-Match + 412/428).
+        options.AddOperationTransformer<ConcurrencyOperationTransformer>();
         // Documenta il rate limiting (429 ProblemDetails + Retry-After).
         options.AddOperationTransformer<RateLimitingOperationTransformer>();
         // Documenta gli header di scoperta versioni (api-supported-versions / api-deprecated-versions).

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
@@ -62,6 +63,37 @@ public class BooksControllerTests : IAsyncLifetime
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlaygroundDbContext>();
         return await db.Books.FindAsync(id);
+    }
+
+    // GET corrente per ottenere l'ETag (token di concorrenza) da rimandare in If-Match sulle scritture.
+    private async Task<EntityTagHeaderValue> GetCurrentETagAsync(int id)
+    {
+        var response = await _readClient.GetAsync($"/api/v1/books/{id}");
+        Assert.NotNull(response.Headers.ETag);
+        return response.Headers.ETag!;
+    }
+
+    // ETag dummy ben formato (base64 valido): supera il check di presenza/parsing dell'If-Match,
+    // così i test "not found" raggiungono il 404 invece del 428/400.
+    private static readonly EntityTagHeaderValue DummyETag = EntityTagHeaderValue.Parse("\"AAAAAAAAB9E=\"");
+
+    private async Task<HttpResponseMessage> PutWithIfMatchAsync(
+        HttpClient client, int id, UpdateBookDto dto, EntityTagHeaderValue ifMatch)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/books/{id}")
+        {
+            Content = JsonContent.Create(dto),
+        };
+        request.Headers.IfMatch.Add(ifMatch);
+        return await client.SendAsync(request);
+    }
+
+    private async Task<HttpResponseMessage> DeleteWithIfMatchAsync(
+        HttpClient client, int id, EntityTagHeaderValue ifMatch)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/books/{id}");
+        request.Headers.IfMatch.Add(ifMatch);
+        return await client.SendAsync(request);
     }
 
     // --- GET /api/v1/books ---
@@ -301,8 +333,9 @@ public class BooksControllerTests : IAsyncLifetime
         var book = await SeedBookAsync(author.Id, "Original Title");
         var newAuthor = await SeedAuthorAsync("New Author");
 
-        var response = await _writeClient.PutAsJsonAsync(
-            $"/api/v1/books/{book.Id}", new UpdateBookDto("Updated Title", newAuthor.Id));
+        var etag = await GetCurrentETagAsync(book.Id);
+        var response = await PutWithIfMatchAsync(
+            _writeClient, book.Id, new UpdateBookDto("Updated Title", newAuthor.Id), etag);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var updated = await response.Content.ReadFromJsonAsync<BookDto>();
@@ -322,10 +355,24 @@ public class BooksControllerTests : IAsyncLifetime
     {
         var author = await SeedAuthorAsync();
 
-        var response = await _writeClient.PutAsJsonAsync(
-            "/api/v1/books/99999", new UpdateBookDto("Whatever", author.Id));
+        // If-Match ben formato (dummy): supera precondizione/parsing → si arriva al 404, non al 428/400.
+        var response = await PutWithIfMatchAsync(
+            _writeClient, 99999, new UpdateBookDto("Whatever", author.Id), DummyETag);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateBook_WithoutIfMatch_Returns428()
+    {
+        var author = await SeedAuthorAsync();
+        var book = await SeedBookAsync(author.Id, "Title");
+
+        var response = await _writeClient.PutAsJsonAsync(
+            $"/api/v1/books/{book.Id}", new UpdateBookDto("Updated", author.Id));
+
+        Assert.Equal(HttpStatusCode.PreconditionRequired, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
     }
 
     [Fact]
@@ -374,7 +421,8 @@ public class BooksControllerTests : IAsyncLifetime
         var author = await SeedAuthorAsync();
         var book = await SeedBookAsync(author.Id, "To Delete");
 
-        var response = await _writeClient.DeleteAsync($"/api/v1/books/{book.Id}");
+        var etag = await GetCurrentETagAsync(book.Id);
+        var response = await DeleteWithIfMatchAsync(_writeClient, book.Id, etag);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
@@ -385,9 +433,20 @@ public class BooksControllerTests : IAsyncLifetime
     [Fact]
     public async Task DeleteBook_WhenNotFound_Returns404()
     {
-        var response = await _writeClient.DeleteAsync("/api/v1/books/99999");
+        var response = await DeleteWithIfMatchAsync(_writeClient, 99999, DummyETag);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteBook_WithoutIfMatch_Returns428()
+    {
+        var author = await SeedAuthorAsync();
+        var book = await SeedBookAsync(author.Id, "Title");
+
+        var response = await _writeClient.DeleteAsync($"/api/v1/books/{book.Id}");
+
+        Assert.Equal(HttpStatusCode.PreconditionRequired, response.StatusCode);
     }
 
     [Fact]
@@ -397,7 +456,8 @@ public class BooksControllerTests : IAsyncLifetime
         var bookToDelete = await SeedBookAsync(author.Id, "Delete Me");
         var bookToKeep = await SeedBookAsync(author.Id, "Keep Me");
 
-        await _writeClient.DeleteAsync($"/api/v1/books/{bookToDelete.Id}");
+        var etag = await GetCurrentETagAsync(bookToDelete.Id);
+        await DeleteWithIfMatchAsync(_writeClient, bookToDelete.Id, etag);
 
         var dbBook = await FindBookInDbAsync(bookToKeep.Id);
         Assert.NotNull(dbBook);

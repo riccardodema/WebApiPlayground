@@ -2,21 +2,26 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Net.Http.Headers;
+using WebApiPlayground.Application.Concurrency;
 
 namespace WebApiPlayground.Api.Http;
 
 /// <summary>
-/// HTTP caching sui GET tramite <b>ETag</b> + <b>Cache-Control</b> (conditional requests, RFC 9110).
+/// Emette l'<b>ETag</b> (RFC 9110) delle risposte e gestisce le richieste condizionali. Due sorgenti
+/// di ETag, a seconda del body:
 ///
-/// <para>Per ogni <c>GET</c> che produce un <see cref="ObjectResult"/> 200 con body:
-/// calcola l'ETag dalla rappresentazione, lo mette in <c>ETag</c> + <c>Cache-Control</c>; se la
-/// richiesta porta un <c>If-None-Match</c> che combacia, sostituisce il body con
-/// <c>304 Not Modified</c> (niente payload) — il client riusa la copia che ha già, risparmiando
-/// banda e (ri)serializzazione.</para>
+/// <list type="bullet">
+/// <item><b>Risorsa versionata</b> (<see cref="IVersionedResource"/> con <c>Version</c> valorizzato —
+/// es. il singolo libro): l'ETag è il <b>token di versione</b> (la rowversion in base64). Lo stesso
+/// header serve sia il caching condizionale (<c>304</c>) sia l'optimistic concurrency (il client lo
+/// rimanda in <c>If-Match</c> sulle scritture → 412/428). Emesso anche sulle risposte di scrittura
+/// (PUT 200 / POST 201), così il client conosce la nuova versione senza una GET intermedia.</item>
+/// <item><b>Altre risposte GET</b> (es. liste paginate): l'ETag è l'<b>impronta della
+/// rappresentazione</b> (hash) — solo caching condizionale, nessuna semantica di concorrenza.</item>
+/// </list>
 ///
-/// <para>Si combina con il caching server-side (HybridCache): quello taglia DB/CPU, questo taglia
-/// la rete. <c>Cache-Control: private, no-cache</c> perché gli endpoint sono autenticati (mai cache
-/// condivise/proxy) e <c>no-cache</c> impone la rivalidazione, mettendo in mostra il 304.</para>
+/// <para><c>Cache-Control: private, no-cache</c> sui GET (endpoint autenticati: mai cache condivise;
+/// <c>no-cache</c> = rivalida sempre, mettendo in mostra il 304).</para>
 /// </summary>
 public sealed class ETagResultFilter : IAsyncResultFilter
 {
@@ -24,40 +29,45 @@ public sealed class ETagResultFilter : IAsyncResultFilter
 
     public async Task OnResultExecutionAsync(ResultExecutingContext context, ResultExecutionDelegate next)
     {
-        if (IsCacheableGet(context, out var value))
+        if (context.Result is ObjectResult { Value: { } body } result)
         {
-            var payload = JsonSerializer.SerializeToUtf8Bytes(value, JsonSerializerOptions.Web);
-            var etag = ETag.Compute(payload);
-
+            var request = context.HttpContext.Request;
             var response = context.HttpContext.Response;
-            response.Headers.ETag = etag;
-            response.Headers.CacheControl = CacheControlValue;
+            var isGet = HttpMethods.IsGet(request.Method);
 
-            if (IfNoneMatchSatisfied(context.HttpContext.Request, etag))
+            if (body is IVersionedResource { Version: { } version })
             {
-                // Risorsa invariata: niente body. Gli header ETag/Cache-Control restano sulla Response.
-                context.Result = new StatusCodeResult(StatusCodes.Status304NotModified);
+                // ETag = token di versione (reversibile in If-Match). Vale su GET 200 e sulle scritture
+                // (PUT 200 / POST 201): qualunque risposta che trasporta una risorsa versionata.
+                var etag = ETag.FromVersion(version);
+                response.Headers.ETag = etag;
+
+                if (isGet)
+                {
+                    response.Headers.CacheControl = CacheControlValue;
+                    if (IfNoneMatchSatisfied(request, etag))
+                        context.Result = new StatusCodeResult(StatusCodes.Status304NotModified);
+                }
+            }
+            else if (isGet && IsOkStatus(result.StatusCode))
+            {
+                // Risorse non versionate (liste): ETag per-rappresentazione, solo caching.
+                var payload = JsonSerializer.SerializeToUtf8Bytes(body, JsonSerializerOptions.Web);
+                var etag = ETag.Compute(payload);
+                response.Headers.ETag = etag;
+                response.Headers.CacheControl = CacheControlValue;
+
+                if (IfNoneMatchSatisfied(request, etag))
+                    context.Result = new StatusCodeResult(StatusCodes.Status304NotModified);
             }
         }
 
         await next();
     }
 
-    private static bool IsCacheableGet(ResultExecutingContext context, out object value)
-    {
-        value = null!;
-        if (!HttpMethods.IsGet(context.HttpContext.Request.Method))
-            return false;
-
-        // Solo risposte 200 con un corpo (Ok(dto) ⇒ OkObjectResult con StatusCode 200).
-        if (context.Result is ObjectResult { Value: { } body, StatusCode: null or StatusCodes.Status200OK })
-        {
-            value = body;
-            return true;
-        }
-
-        return false;
-    }
+    // Ok(dto) ⇒ OkObjectResult con StatusCode 200; alcuni ObjectResult lasciano StatusCode null (= 200).
+    private static bool IsOkStatus(int? statusCode) =>
+        statusCode is null or StatusCodes.Status200OK;
 
     private static bool IfNoneMatchSatisfied(HttpRequest request, string etag)
     {

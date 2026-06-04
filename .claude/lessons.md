@@ -315,6 +315,36 @@ non matcha alcun endpoint → 404 (con i reader header/query si avrebbe 400 + `a
 
 ---
 
+## [L17] Optimistic concurrency: OriginalValue del token, ETag header-only vs cache L2, scritture pre-esistenti
+
+**Contesto:** rowversion EF Core esposta come ETag, `If-Match` su PUT/DELETE → 412/428. Dettagli in
+`.claude/context/optimistic-concurrency.md`.
+
+**Errori e cause:**
+- **"Find-then-update" non rileva mai il conflitto.** Il pattern `FindAsync` → modifica campi →
+  `SaveChanges` carica l'`OriginalValue` della rowversion **dalla riga appena letta**: l'`UPDATE` esce
+  con `WHERE Id=@id AND RowVersion=@valoreAppenaLetto`, che combacia **sempre** → 0 conflitti. → Bisogna
+  forzare `Entry(existing).Property(b => b.RowVersion).OriginalValue = <versione attesa dal client>`
+  (arrivata da If-Match). Solo così l'UPDATE è condizionato alla versione del client; stale → 0 righe →
+  `DbUpdateConcurrencyException`. (Confermato da Context7 su `/dotnet/efcore`.)
+- **ETag header-only (`[JsonIgnore]`) vs cache distribuita.** Il token di versione sta sul DTO ma è
+  `[JsonIgnore]` (solo header, non nel body). FusionCache **L1 in memoria** tiene l'oggetto vivo → il
+  token sopravvive. Ma con **L2 Redis** (config-gated, oggi spento) il DTO viene **serializzato** e
+  `[JsonIgnore]` lo strippa → su un hit servito da L2 il token sparisce e l'ETag ricade sull'hash della
+  rappresentazione → la concorrenza salta in modo silenzioso. → Limite consapevole finché L2 è inattivo;
+  fix futuro: serializzare il token nel payload di cache quando L2 è attivo. La serializzazione di trasporto
+  (HTTP) e quella di cache (L2) **non sono la stessa cosa**: un attributo che le governa entrambe è una trappola.
+- **`If-Match` obbligatorio = breaking change sui test esistenti.** Rendendo `If-Match` necessario,
+  tutti i PUT/DELETE che non lo mandavano iniziano a rispondere **428**, non 200/404. → Adeguati i test
+  (GET dell'ETag → If-Match); per i casi "not found" si manda un If-Match **dummy ben formato** (base64
+  valido) così si supera il check di precondizione e si raggiunge il 404. Nota di precedenza: 401/403
+  (auth) e 400 (validazione del body via filtro) **precedono** l'action, quindi precedono il 428.
+
+**Soluzione:** vedi `BookRepository.UpdateAsync/DeleteAsync`, `ETagResultFilter`,
+`PreconditionExceptionHandler` e i test in `tests/.../Concurrency/OptimisticConcurrencyTests.cs`.
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using WebApiPlayground.Application.Concurrency;
 using WebApiPlayground.Application.Interfaces;
 using WebApiPlayground.Application.Querying;
 using WebApiPlayground.Domain.Entities;
@@ -125,9 +126,20 @@ public class BookRepository : IBookRepository
         existing.Title = book.Title;
         existing.AuthorId = book.AuthorId;
 
+        // Optimistic concurrency: forziamo l'OriginalValue del token alla versione ATTESA dal client
+        // (arrivata in book.RowVersion via If-Match). Senza questo, EF userebbe la versione appena letta
+        // dal FindAsync e l'UPDATE non rileverebbe mai un conflitto. Stale → 0 righe → DbUpdateConcurrencyException.
+        _context.Entry(existing).Property(b => b.RowVersion).OriginalValue = book.RowVersion;
+
         try
         {
             await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            _logger.LogWarning(ex,
+                "Concurrency conflict updating book {BookId}: the supplied version is stale", book.Id);
+            throw new ConcurrencyConflictException(book.Id, ex);
         }
         catch (DbUpdateException ex)
         {
@@ -145,7 +157,7 @@ public class BookRepository : IBookRepository
         return updated;
     }
 
-    public async Task<bool> DeleteAsync(int id)
+    public async Task<bool> DeleteAsync(int id, byte[] expectedVersion)
     {
         _logger.LogDebug("Looking up book {BookId} for deletion", id);
 
@@ -157,11 +169,19 @@ public class BookRepository : IBookRepository
             return false;
         }
 
+        // Stessa storia dell'update: il DELETE è condizionato alla versione attesa (If-Match).
+        _context.Entry(book).Property(b => b.RowVersion).OriginalValue = expectedVersion;
         _context.Books.Remove(book);
 
         try
         {
             await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            _logger.LogWarning(ex,
+                "Concurrency conflict deleting book {BookId}: the supplied version is stale", id);
+            throw new ConcurrencyConflictException(id, ex);
         }
         catch (DbUpdateException ex)
         {

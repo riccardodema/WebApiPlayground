@@ -11,6 +11,10 @@ namespace WebApiPlayground.Tests.Services;
 
 public class BooksServiceTests
 {
+    // Token di versione atteso dal client (If-Match) → instradato al repo come Book.RowVersion.
+    private static readonly byte[] Version = [0, 0, 0, 0, 0, 0, 7, 209];
+    private static readonly string VersionBase64 = Convert.ToBase64String(Version);
+
     private readonly Mock<IBookRepository> _repositoryMock = new();
     private readonly BooksService _sut;
 
@@ -147,11 +151,13 @@ public class BooksServiceTests
     {
         var dto = new UpdateBookDto("Refactoring", 3);
         var updatedBook = new Book { Id = 5, Title = "Refactoring", AuthorId = 3, Author = new Author { Id = 3, FullName = "Martin Fowler" } };
+        // Il token atteso (If-Match) dev'essere instradato al repo come Book.RowVersion (concurrency token).
         _repositoryMock
-            .Setup(r => r.UpdateAsync(It.Is<Book>(b => b.Id == 5 && b.Title == dto.Title && b.AuthorId == dto.AuthorId)))
+            .Setup(r => r.UpdateAsync(It.Is<Book>(b =>
+                b.Id == 5 && b.Title == dto.Title && b.AuthorId == dto.AuthorId && b.RowVersion == Version)))
             .ReturnsAsync(updatedBook);
 
-        var result = await _sut.UpdateBookAsync(5, dto);
+        var result = await _sut.UpdateBookAsync(5, dto, Version);
 
         Assert.NotNull(result);
         Assert.Equal(5, result.Id);
@@ -164,7 +170,7 @@ public class BooksServiceTests
     {
         _repositoryMock.Setup(r => r.UpdateAsync(It.IsAny<Book>())).ReturnsAsync((Book?)null);
 
-        var result = await _sut.UpdateBookAsync(999, new UpdateBookDto("X", 1));
+        var result = await _sut.UpdateBookAsync(999, new UpdateBookDto("X", 1), Version);
 
         Assert.Null(result);
     }
@@ -172,22 +178,55 @@ public class BooksServiceTests
     [Fact]
     public async Task DeleteBookAsync_ReturnsTrue_WhenBookExists()
     {
-        _repositoryMock.Setup(r => r.DeleteAsync(1)).ReturnsAsync(true);
+        _repositoryMock.Setup(r => r.DeleteAsync(1, Version)).ReturnsAsync(true);
 
-        var result = await _sut.DeleteBookAsync(1);
+        var result = await _sut.DeleteBookAsync(1, Version);
 
         Assert.True(result);
-        _repositoryMock.Verify(r => r.DeleteAsync(1), Times.Once);
+        _repositoryMock.Verify(r => r.DeleteAsync(1, Version), Times.Once);
     }
 
     [Fact]
     public async Task DeleteBookAsync_ReturnsFalse_WhenBookNotFound()
     {
-        _repositoryMock.Setup(r => r.DeleteAsync(999)).ReturnsAsync(false);
+        _repositoryMock.Setup(r => r.DeleteAsync(999, It.IsAny<byte[]>())).ReturnsAsync(false);
 
-        var result = await _sut.DeleteBookAsync(999);
+        var result = await _sut.DeleteBookAsync(999, Version);
 
         Assert.False(result);
+    }
+
+    [Fact]
+    public async Task GetBookByIdAsync_ProjectsRowVersion_AsBase64Version()
+    {
+        // Il token di concorrenza (rowversion) è esposto come Version base64 (poi → ETag nell'API).
+        var book = new Book
+        {
+            Id = 1, Title = "Clean Code", AuthorId = 1,
+            Author = new Author { Id = 1, FullName = "Robert C. Martin" },
+            RowVersion = Version,
+        };
+        _repositoryMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(book);
+
+        var result = await _sut.GetBookByIdAsync(1);
+
+        Assert.Equal(VersionBase64, result!.Version);
+    }
+
+    [Fact]
+    public async Task GetBookDetailsByIdAsync_ProjectsRowVersion_AsBase64Version()
+    {
+        var book = new Book
+        {
+            Id = 1, Title = "Clean Code", AuthorId = 7,
+            Author = new Author { Id = 7, FullName = "Robert C. Martin" },
+            RowVersion = Version,
+        };
+        _repositoryMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(book);
+
+        var result = await _sut.GetBookDetailsByIdAsync(1);
+
+        Assert.Equal(VersionBase64, result!.Version);
     }
 
     [Fact]

@@ -41,6 +41,7 @@ Clean Architecture, dependencies point inwards (outer layers depend on inner, ne
 | Liveness / readiness health probes | `Api/HealthChecks` (`/health/live`, `/health/ready`) |
 | Rate limiting (sliding window, per-client) | `Api/RateLimiting`, `Api/Extensions/RateLimitingExtensions` |
 | API versioning (URL segment, doc per version) | `Api/Versioning`, `Api/Extensions/ApiVersioningExtensions` |
+| Optimistic concurrency (rowversion → ETag/`If-Match`, 412/428) | `Api/Http/ETagResultFilter`, `Infrastructure/Repositories/BookRepository` |
 
 ## Stack
 
@@ -50,6 +51,7 @@ Clean Architecture, dependencies point inwards (outer layers depend on inner, ne
 - **HybridCache via FusionCache** (Redis-ready) + **HTTP caching (ETag)**
 - **Native .NET rate limiting** (`System.Threading.RateLimiting`, sliding window)
 - **Asp.Versioning** for API versioning (URL segment, OpenAPI document per version)
+- **Optimistic concurrency** (EF Core `rowversion` → ETag / `If-Match`, 412/428)
 - **xUnit · Moq · Testcontainers.MsSql** for testing
 - **SQL Database Project (DACPAC)** for the database schema
 
@@ -144,9 +146,31 @@ without a big-bang. Done with **Asp.Versioning** (the maintained successor of th
 - **Composes with everything**: each versioned operation keeps auth, rate limiting, idempotency, ETag
   caching and ProblemDetails — the OpenAPI transformers are shared across version documents.
 
-Versioning is orthogonal to **optimistic concurrency** (rowversion/ETag `If-Match` on `PUT`), which
-the roadmap pairs with it; that lands as its own focused change. Details:
-[`.claude/context/api-versioning.md`](.claude/context/api-versioning.md).
+Details: [`.claude/context/api-versioning.md`](.claude/context/api-versioning.md).
+
+## Optimistic concurrency
+
+Two clients read the same book and `PUT`/`DELETE` it almost simultaneously: without protection the
+second write silently overwrites the first — a **lost update**. Even on a single instance, concurrent
+users make this real. Optimistic concurrency locks nobody (no pessimistic locks, a poor fit for
+stateless HTTP): each resource carries a **version**, and a write only proceeds if the version the
+client expects is still current.
+
+- **`rowversion` as the token.** SQL Server auto-bumps a `rowversion` column on every UPDATE — no
+  app code. EF Core maps it with `.IsRowVersion()` as a **concurrency token**, so the `UPDATE`/`DELETE`
+  becomes conditional (`WHERE Id=@id AND RowVersion=@expected`); 0 rows affected ⇒
+  `DbUpdateConcurrencyException`.
+- **Exposed as an ETag, validated with `If-Match`.** It **reuses the existing ETag infrastructure**:
+  a single book's ETag is now the *version token* (not a representation hash), so one header serves both
+  conditional caching (`304`) and concurrency. Writes **require** `If-Match` — missing ⇒
+  **`428 Precondition Required`**, stale ⇒ **`412 Precondition Failed`** — and a successful write returns
+  the new ETag, so a client can chain updates without a re-`GET`.
+- **Errors as ProblemDetails** (RFC 7807) with the same `correlationId`/`traceId` as everything else, and
+  the **`If-Match`/412/428 contract is documented in OpenAPI**, not implicit. Applies to both `PUT` and
+  `DELETE`, across v1 and v2 (writes are shared).
+
+Details and the conscious cache-L2 caveat:
+[`.claude/context/optimistic-concurrency.md`](.claude/context/optimistic-concurrency.md).
 
 ## Database as code
 
