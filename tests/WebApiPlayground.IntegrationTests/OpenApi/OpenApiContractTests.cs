@@ -50,6 +50,25 @@ public class OpenApiContractTests
     }
 
     [Fact]
+    public async Task OpenApi_DocumentsRateLimiting429_WithRetryAfter_OnAllOperations()
+    {
+        using var document = await GetOpenApiDocumentAsync();
+
+        var operations = new[] { "get", "post", "put", "delete" }
+            .SelectMany(verb => Operations(document, verb))
+            .ToList();
+
+        Assert.NotEmpty(operations);
+        foreach (var operation in operations)
+        {
+            Assert.True(operation.GetProperty("responses").TryGetProperty("429", out var response),
+                "Un'operazione non documenta la risposta 429 del rate limiting nello spec OpenAPI.");
+            Assert.True(response.GetProperty("headers").TryGetProperty("Retry-After", out _),
+                "La 429 non documenta l'header di risposta 'Retry-After'.");
+        }
+    }
+
+    [Fact]
     public async Task OpenApi_DocumentsConditionalGetContract_OnGet()
     {
         using var document = await GetOpenApiDocumentAsync();

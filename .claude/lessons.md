@@ -255,6 +255,37 @@ model binding lo rilegge.
 
 ---
 
+## [L15] Rate limiter nativo .NET: ordine pipeline, config lazy, Retry-After e isolamento nei test
+
+**Contesto:** rate limiter `AddRateLimiter`/`UseRateLimiter` con policy sliding-window read/write +
+429 ProblemDetails. Dettagli in `.claude/context/rate-limiting.md`.
+
+**Ordine middleware:** `app.UseRateLimiter()` va **dopo `UseAuthorization()`** (la partizione per
+utente legge il claim, che senza auth non c'è) e **prima** del middleware di idempotency (rifiuta
+presto, prima del buffering del body). `QueueLimit = 0` → 429 immediato invece di accodare.
+
+**Config letta troppo presto (il bug):** leggere le opzioni alla **registrazione**
+(`configuration.GetSection(...).Get<RateLimitingOptions>()` dentro `AddApiRateLimiting`) ignora gli
+override di `WebApplicationFactory`: in minimal hosting le sorgenti `ConfigureAppConfiguration` del
+test sono applicate durante `builder.Build()`, **dopo** che i servizi sono già registrati → il limiter
+vedeva sempre `appsettings.json`, mai i limiti minuscoli del test. **Soluzione:** leggere le opzioni
+**a tempo di richiesta** via `IOptions<RateLimitingOptions>` dentro il partitioner (binding lazy,
+post-build) — è anche design migliore (niente cattura eager).
+
+**Retry-After non garantito:** la sliding window non sempre espone il metadata `RetryAfter` nel lease.
+**Soluzione:** in `OnRejected`, fallback alla finestra della policy che ha respinto (ricavata
+dall'endpoint via `EnableRateLimitingAttribute.PolicyName`), così l'header c'è sempre. NB: il 429 è
+**RFC 6585 §4**, non RFC 9110.
+
+**Test che si sporcano a vicenda:** il limiter è un **singleton in-memory** condiviso dalla factory
+della collection, e l'auth di test usa un `NameIdentifier` fisso → tutte le richieste cadono nella
+stessa partizione. Senza accorgimenti la suite cumulativa supererebbe i limiti reali e farebbe 429
+"a caso". **Soluzione:** (1) la factory base alza i limiti ad altissimi (rate limiting neutro per il
+resto della suite); (2) i test del rate limiter li riabbassano via `WithWebHostBuilder` (host nuovo =
+limiter pulito) e isolano la partizione con un'identità distinta per test (header `X-Test-User`).
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 
