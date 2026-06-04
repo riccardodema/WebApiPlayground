@@ -18,6 +18,7 @@
 | Idempotency (`Idempotency-Key` sui POST, replay prima risposta, 422 su riuso, store IDistributedCache Redis-ready, exactly-once) | `.claude/context/idempotency.md` + `.claude/lessons.md` [L14] |
 | Rate limiting (rate limiter nativo .NET, policy sliding window read/write, partizione per client, 429 ProblemDetails + `Retry-After`, `[EnableRateLimiting]`) | `.claude/context/rate-limiting.md` + `.claude/lessons.md` [L15] |
 | API versioning (Asp.Versioning, segmento URL `/api/v{n}/`, `[ApiVersion]`/`[MapToApiVersion]`, documento OpenAPI per versione, esempio v2 con DTO evoluto, header `api-supported-versions`) | `.claude/context/api-versioning.md` + `.claude/lessons.md` [L16] |
+| Optimistic concurrency (rowversion EF Core, ETag = token di versione + `If-Match` obbligatorio su PUT/DELETE → 412 stale / 428 mancante, conflitto→ProblemDetails, riuso ETagResultFilter) | `.claude/context/optimistic-concurrency.md` + `.claude/lessons.md` [L17] |
 | Package, URL, comandi dotnet/ef | `.claude/context/stack.md` |
 | Prima di usare Swagger/Swashbuckle o configurare OpenAPI | `.claude/lessons.md` |
 | Errori ricorrenti o approcci da evitare | `.claude/lessons.md` |

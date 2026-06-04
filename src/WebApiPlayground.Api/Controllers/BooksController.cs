@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using WebApiPlayground.Api.Authorization;
+using WebApiPlayground.Api.ErrorHandling;
+using WebApiPlayground.Api.Http;
 using WebApiPlayground.Api.RateLimiting;
 using WebApiPlayground.Api.Versioning;
 using WebApiPlayground.Application.DTOs;
@@ -128,25 +130,35 @@ public class BooksController : ControllerBase
     /// Validazione del body (FluentValidation): <c>title</c> obbligatorio, 1–100 caratteri;
     /// <c>authorId</c> intero positivo (&gt; 0). In caso di violazione → 400 con i dettagli
     /// per campo nella proprietà <c>errors</c>.
+    ///
+    /// <b>Optimistic concurrency</b>: richiede l'header <c>If-Match</c> con l'ETag ottenuto da una GET
+    /// precedente. Assente → 428; ETag stale (la risorsa è cambiata nel frattempo) → 412; in caso di
+    /// successo la risposta porta il nuovo <c>ETag</c>.
     /// </remarks>
     /// <param name="id">Id del libro da aggiornare.</param>
     /// <param name="dto">Nuovi valori della risorsa.</param>
-    /// <response code="200">Il libro aggiornato.</response>
-    /// <response code="400">Body non valido (vedi <c>errors</c> per i campi e come correggerli).</response>
+    /// <response code="200">Il libro aggiornato (header <c>ETag</c> con la nuova versione).</response>
+    /// <response code="400">Body non valido, oppure <c>If-Match</c> malformato.</response>
     /// <response code="404">Nessun libro con l'Id indicato.</response>
+    /// <response code="412">L'ETag in <c>If-Match</c> è stale: la risorsa è stata modificata da un'altra richiesta.</response>
+    /// <response code="428">Header <c>If-Match</c> mancante (richiesto per le scritture).</response>
     [HttpPut("{id:int}")]
     [Authorize(Policy = AuthorizationPolicies.WriteBooks)]
     [EnableRateLimiting(RateLimitingOptions.PolicyNames.Write)]
     [ProducesResponseType(typeof(BookDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status412PreconditionFailed)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
     public async Task<IActionResult> UpdateBook([FromRoute] int id, [FromBody] UpdateBookDto dto)
     {
+        var expectedVersion = RequireIfMatch();
+
         _logger.LogInformation(
             "Updating book {BookId} — Title: '{BookTitle}', AuthorId: {AuthorId}",
             id, dto.Title, dto.AuthorId);
 
-        var updated = await _booksService.UpdateBookAsync(id, dto);
+        var updated = await _booksService.UpdateBookAsync(id, dto, expectedVersion);
 
         if (updated is null)
         {
@@ -159,19 +171,31 @@ public class BooksController : ControllerBase
     }
 
     /// <summary>Elimina un libro per Id.</summary>
+    /// <remarks>
+    /// <b>Optimistic concurrency</b>: come la PUT, richiede l'header <c>If-Match</c> con l'ETag corrente
+    /// (delete-if-unchanged). Assente → 428; ETag stale → 412.
+    /// </remarks>
     /// <param name="id">Id del libro da eliminare.</param>
     /// <response code="204">Libro eliminato.</response>
+    /// <response code="400"><c>If-Match</c> malformato.</response>
     /// <response code="404">Nessun libro con l'Id indicato.</response>
+    /// <response code="412">L'ETag in <c>If-Match</c> è stale: la risorsa è stata modificata da un'altra richiesta.</response>
+    /// <response code="428">Header <c>If-Match</c> mancante (richiesto per le scritture).</response>
     [HttpDelete("{id:int}")]
     [Authorize(Policy = AuthorizationPolicies.WriteBooks)]
     [EnableRateLimiting(RateLimitingOptions.PolicyNames.Write)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status412PreconditionFailed)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
     public async Task<IActionResult> DeleteBook([FromRoute] int id)
     {
+        var expectedVersion = RequireIfMatch();
+
         _logger.LogInformation("Deleting book with ID {BookId}", id);
 
-        var deleted = await _booksService.DeleteBookAsync(id);
+        var deleted = await _booksService.DeleteBookAsync(id, expectedVersion);
 
         if (!deleted)
         {
@@ -181,5 +205,21 @@ public class BooksController : ControllerBase
 
         _logger.LogInformation("Book with ID {BookId} deleted successfully", id);
         return NoContent();
+    }
+
+    /// <summary>
+    /// Legge l'header <c>If-Match</c> (obbligatorio sulle scritture) e ne estrae il token di versione
+    /// (byte della rowversion). Assente → <see cref="PreconditionException.Required"/> (428); presente
+    /// ma non un ETag strong valido → <see cref="PreconditionException.MalformedIfMatch"/> (400). Le
+    /// eccezioni sono mappate a ProblemDetails da <see cref="PreconditionExceptionHandler"/>.
+    /// </summary>
+    private byte[] RequireIfMatch()
+    {
+        var ifMatch = Request.Headers.IfMatch.ToString();
+        if (string.IsNullOrWhiteSpace(ifMatch))
+            throw PreconditionException.Required();
+        if (!ETag.TryParseToken(ifMatch, out var token))
+            throw PreconditionException.MalformedIfMatch();
+        return token;
     }
 }

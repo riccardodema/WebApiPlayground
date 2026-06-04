@@ -86,13 +86,15 @@ public class BooksService : IBooksService
         return MapToDto(created);
     }
 
-    public async Task<BookDto?> UpdateBookAsync(int id, UpdateBookDto dto)
+    public async Task<BookDto?> UpdateBookAsync(int id, UpdateBookDto dto, byte[] expectedVersion)
     {
         _logger.LogDebug(
             "Updating book {BookId} — new Title: '{BookTitle}', AuthorId: {AuthorId}",
             id, dto.Title, dto.AuthorId);
 
-        var book = new Book { Id = id, Title = dto.Title, AuthorId = dto.AuthorId };
+        // Il token atteso (If-Match) viaggia in RowVersion: il repository lo usa come OriginalValue del
+        // concurrency token, così l'UPDATE è condizionale (WHERE Id=@id AND RowVersion=@expectedVersion).
+        var book = new Book { Id = id, Title = dto.Title, AuthorId = dto.AuthorId, RowVersion = expectedVersion };
         var updated = await _repository.UpdateAsync(book);
 
         if (updated is null)
@@ -108,11 +110,11 @@ public class BooksService : IBooksService
         return MapToDto(updated);
     }
 
-    public async Task<bool> DeleteBookAsync(int id)
+    public async Task<bool> DeleteBookAsync(int id, byte[] expectedVersion)
     {
         _logger.LogDebug("Requesting deletion of book {BookId} from repository", id);
 
-        var deleted = await _repository.DeleteAsync(id);
+        var deleted = await _repository.DeleteAsync(id, expectedVersion);
 
         if (!deleted)
             _logger.LogDebug("Repository reported book {BookId} does not exist — nothing deleted", id);
@@ -144,9 +146,15 @@ public class BooksService : IBooksService
     }
 
     private static BookDto MapToDto(Book book) =>
-        new(book.Id, book.Title, book.Author?.FullName ?? string.Empty);
+        new(book.Id, book.Title, book.Author?.FullName ?? string.Empty) { Version = EncodeVersion(book.RowVersion) };
 
     // Proiezione v2: l'autore diventa un oggetto annidato (Id + FullName) invece del nome piatto.
     private static BookDetailsDto MapToDetailsDto(Book book) =>
-        new(book.Id, book.Title, new AuthorDto(book.Author?.Id ?? 0, book.Author?.FullName ?? string.Empty));
+        new(book.Id, book.Title, new AuthorDto(book.Author?.Id ?? 0, book.Author?.FullName ?? string.Empty))
+        { Version = EncodeVersion(book.RowVersion) };
+
+    // Token di concorrenza opaco esposto come ETag: base64 della rowversion. Vuoto/null se assente
+    // (es. entità non ancora persistita) → il layer HTTP ricade sull'ETag per-rappresentazione.
+    private static string? EncodeVersion(byte[] rowVersion) =>
+        rowVersion is { Length: > 0 } ? Convert.ToBase64String(rowVersion) : null;
 }

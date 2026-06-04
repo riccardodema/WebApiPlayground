@@ -122,4 +122,23 @@ public class OpenApiContractTests
         var okHeaders = get.GetProperty("responses").GetProperty("200").GetProperty("headers");
         Assert.True(okHeaders.TryGetProperty("ETag", out _), "La 200 non documenta l'header di risposta 'ETag'.");
     }
+
+    [Theory]
+    [InlineData("put")]
+    [InlineData("delete")]
+    public async Task OpenApi_DocumentsOptimisticConcurrencyContract_OnWrites(string verb)
+    {
+        using var document = await GetOpenApiDocumentAsync();
+
+        var write = Operations(document, verb).FirstOrDefault(w => HasHeaderParameter(w, "If-Match"));
+
+        Assert.True(write.ValueKind == JsonValueKind.Object,
+            $"Nessuna operazione {verb.ToUpperInvariant()} documenta l'header 'If-Match' nello spec OpenAPI.");
+
+        var responses = write.GetProperty("responses");
+        Assert.True(responses.TryGetProperty("412", out _),
+            $"L'operazione {verb.ToUpperInvariant()} non documenta la risposta 412 Precondition Failed.");
+        Assert.True(responses.TryGetProperty("428", out _),
+            $"L'operazione {verb.ToUpperInvariant()} non documenta la risposta 428 Precondition Required.");
+    }
 }

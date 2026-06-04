@@ -98,8 +98,13 @@ public class ETagCachingTests : IAsyncLifetime
         var before = await _readClient.GetAsync($"/api/v1/books/{book.Id}");
         var etagBefore = before.Headers.ETag;
 
-        var update = await _writeClient.PutAsJsonAsync(
-            $"/api/v1/books/{book.Id}", new UpdateBookDto("Updated", book.AuthorId));
+        // La PUT richiede If-Match (optimistic concurrency): rimandiamo l'ETag appena letto.
+        var updateRequest = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/books/{book.Id}")
+        {
+            Content = JsonContent.Create(new UpdateBookDto("Updated", book.AuthorId)),
+        };
+        updateRequest.Headers.IfMatch.Add(etagBefore!);
+        var update = await _writeClient.SendAsync(updateRequest);
         update.EnsureSuccessStatusCode();
 
         var after = await _readClient.GetAsync($"/api/v1/books/{book.Id}");

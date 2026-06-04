@@ -10,8 +10,14 @@ public interface IBookRepository
     Task<Book?> GetByIdAsync(int id);
     Task<Book> CreateAsync(Book book);
 
-    /// <summary>Aggiorna un libro esistente. Restituisce l'entità aggiornata (con autore)
-    /// oppure <c>null</c> se nessun libro ha l'Id indicato.</summary>
+    /// <summary>Aggiorna un libro esistente con controllo di concorrenza ottimistica. Il token di
+    /// versione atteso viaggia in <c>book.RowVersion</c> (usato come <c>OriginalValue</c> del concurrency
+    /// token). Restituisce l'entità aggiornata (con autore) oppure <c>null</c> se nessun libro ha l'Id
+    /// indicato; lancia <see cref="Concurrency.ConcurrencyConflictException"/> se la versione è stale.</summary>
     Task<Book?> UpdateAsync(Book book);
-    Task<bool> DeleteAsync(int id);
+
+    /// <summary>Elimina un libro con controllo di concorrenza ottimistica: cancella solo se la
+    /// <paramref name="expectedVersion"/> coincide con quella corrente. Restituisce <c>false</c> se il
+    /// libro non esiste; lancia <see cref="Concurrency.ConcurrencyConflictException"/> se la versione è stale.</summary>
+    Task<bool> DeleteAsync(int id, byte[] expectedVersion);
 }

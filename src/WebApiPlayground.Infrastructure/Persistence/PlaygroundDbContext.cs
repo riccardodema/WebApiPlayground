@@ -33,6 +33,12 @@ public class PlaygroundDbContext : DbContext
                 .HasMaxLength(100)  // NVARCHAR(100)
                 .IsRequired();
 
+            // Optimistic concurrency: ROWVERSION auto-mantenuta da SQL Server. IsRowVersion la marca
+            // come concurrency token store-generated → l'UPDATE/DELETE diventa condizionale
+            // (WHERE Id=@id AND RowVersion=@original); 0 righe → DbUpdateConcurrencyException.
+            entity.Property(b => b.RowVersion)
+                .IsRowVersion();
+
             entity.HasOne(b => b.Author)
                 .WithMany(a => a.Books)
                 .HasForeignKey(b => b.AuthorId)

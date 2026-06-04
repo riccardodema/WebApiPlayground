@@ -96,17 +96,19 @@ public sealed class CachingBooksService : IBooksService
         return created;
     }
 
-    public async Task<BookDto?> UpdateBookAsync(int id, UpdateBookDto dto)
+    public async Task<BookDto?> UpdateBookAsync(int id, UpdateBookDto dto, byte[] expectedVersion)
     {
-        var updated = await _inner.UpdateBookAsync(id, dto);
+        // Su conflitto di concorrenza l'inner lancia prima di tornare: l'invalidazione NON parte
+        // (corretto — nulla è cambiato nel DB), l'eccezione si propaga fino al mapping 412.
+        var updated = await _inner.UpdateBookAsync(id, dto, expectedVersion);
         if (updated is not null)
             await InvalidateAsync();
         return updated;
     }
 
-    public async Task<bool> DeleteBookAsync(int id)
+    public async Task<bool> DeleteBookAsync(int id, byte[] expectedVersion)
     {
-        var deleted = await _inner.DeleteBookAsync(id);
+        var deleted = await _inner.DeleteBookAsync(id, expectedVersion);
         if (deleted)
             await InvalidateAsync();
         return deleted;

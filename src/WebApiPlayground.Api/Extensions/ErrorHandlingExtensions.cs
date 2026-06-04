@@ -17,6 +17,10 @@ public static class ErrorHandlingExtensions
             options.CustomizeProblemDetails = context =>
                 ProblemDetailsEnricher.Enrich(context.HttpContext, context.ProblemDetails));
 
+        // L'ordine conta: gli IExceptionHandler sono provati nell'ordine di registrazione finché uno
+        // gestisce. Il PreconditionExceptionHandler mappa precondizioni/concorrenza (412/428/400) e
+        // declina il resto; il GlobalExceptionHandler è il catch-all (500), quindi va per ultimo.
+        services.AddExceptionHandler<PreconditionExceptionHandler>();
         services.AddExceptionHandler<GlobalExceptionHandler>();
 
         return services;

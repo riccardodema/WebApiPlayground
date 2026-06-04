@@ -58,8 +58,11 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
   **documento OpenAPI per versione** in Scalar, esempio **v2** con DTO evoluto (autore annidato) e
   scritture condivise tra le versioni; `ReportApiVersions` → header `api-supported-versions`. Vedi
   `.claude/context/api-versioning.md`, `[L16]`.
-- ⬜ **Optimistic concurrency** (rowversion/ETag + `If-Match`) sul PUT → 412/428: PR dedicata
-  (separata dal versioning per "una capability per PR"). Riusa l'infrastruttura ETag esistente.
+- ✅ **Optimistic concurrency**: colonna `rowversion` (concurrency token EF Core) esposta come **ETag**;
+  `If-Match` **obbligatorio** su **PUT e DELETE** → **412** se stale, **428** se mancante (conflitto e
+  precondizione come ProblemDetails RFC 7807, stesso `correlationId`/`traceId`). **Riusa l'`ETagResultFilter`**
+  esistente: l'ETag del singolo libro diventa il token di versione (un header per caching condizionale *e*
+  concorrenza). Vedi `.claude/context/optimistic-concurrency.md`, `[L17]`.
 
 ## Tier 3 — Observability distribuita
 
