@@ -43,6 +43,8 @@ try
         options.AddSchemaTransformer<FluentValidationSchemaTransformer>();
         // Documenta nel contratto l'idempotency dei POST (header Idempotency-Key/Replayed + 422).
         options.AddOperationTransformer<IdempotencyOperationTransformer>();
+        // Documenta nel contratto l'HTTP caching dei GET (ETag/Cache-Control/If-None-Match + 304).
+        options.AddOperationTransformer<CachingOperationTransformer>();
     });
 
     builder.Services.AddApplication();

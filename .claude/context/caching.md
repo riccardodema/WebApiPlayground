@@ -119,6 +119,15 @@ Avviare davvero Redis (docker-compose) è un passo separato della roadmap (Tier 
   regola enforce in `tests/WebApiPlayground.ArchitectureTests` (`Application_should_not_depend_on_cache_implementations`).
 - FusionCache/Redis stanno in Infrastructure (composition root), coerente con `architecture.md`.
 
+## Contratto (OpenAPI)
+
+L'HTTP caching è **documentato nello spec** (non implicito nel filter): l'operation transformer
+[`Api/OpenApi/CachingOperationTransformer.cs`](../../src/WebApiPlayground.Api/OpenApi/CachingOperationTransformer.cs)
+aggiunge sui GET l'header di richiesta `If-None-Match`, gli header di risposta `ETag` e
+`Cache-Control` sulla 200 e la risposta `304 Not Modified` — visibili in Scalar e in
+`/openapi/v1.json`. Un test ne verifica la presenza nel contratto (vedi sotto). Stesso approccio
+dell'idempotency (`.claude/context/idempotency.md`).
+
 ## Test
 
 - **Unit** ([`tests/WebApiPlayground.Tests/Caching`](../../tests/WebApiPlayground.Tests/Caching)):
