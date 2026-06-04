@@ -2,9 +2,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using WebApiPlayground.Application.Idempotency;
 using WebApiPlayground.Application.Interfaces;
 using WebApiPlayground.Infrastructure.Caching;
 using WebApiPlayground.Infrastructure.HealthChecks;
+using WebApiPlayground.Infrastructure.Idempotency;
 using WebApiPlayground.Infrastructure.Persistence;
 using WebApiPlayground.Infrastructure.Repositories;
 using ZiggyCreatures.Caching.Fusion;
@@ -23,6 +25,7 @@ public static class DependencyInjection
         services.AddScoped<IBookRepository, BookRepository>();
 
         AddCaching(services, configuration);
+        AddIdempotency(services, configuration);
 
         // Health check di readiness sul DB: verifica che il DbContext riesca a connettersi.
         // Tagged "ready" → esposto solo dal probe /health/ready (vedi Api/HealthChecks).
@@ -80,5 +83,27 @@ public static class DependencyInjection
         // Espone FusionCache come HybridCache nel container (e abilita l'invalidazione multi-nodo
         // via backplane che l'implementazione Microsoft di HybridCache oggi non offre).
         fusion.AsHybridCache();
+    }
+
+    /// <summary>
+    /// Registra lo store dell'idempotency su <c>IDistributedCache</c> (get-or-null + set con TTL):
+    /// in memoria di default, Redis se è configurata una connection string (stesso setting della
+    /// cache) → store condiviso fra istanze. Singleton: store e lock sono stateless/thread-safe e
+    /// consumati dal middleware (a sua volta singleton). Vedi <c>.claude/context/idempotency.md</c>.
+    /// </summary>
+    private static void AddIdempotency(IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<IdempotencyOptions>(configuration.GetSection(IdempotencyOptions.SectionName));
+
+        var redisConnection = configuration
+            .GetSection(CacheSettings.SectionName).Get<CacheSettings>()?.Redis.ConnectionString;
+
+        if (!string.IsNullOrWhiteSpace(redisConnection))
+            services.AddStackExchangeRedisCache(options => options.Configuration = redisConnection);
+        else
+            services.AddDistributedMemoryCache();
+
+        services.AddSingleton<IIdempotencyStore, DistributedCacheIdempotencyStore>();
+        services.AddSingleton<KeyedAsyncLock>();
     }
 }

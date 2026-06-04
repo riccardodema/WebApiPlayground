@@ -230,6 +230,31 @@ matcha. Correlato a `[L02]` (Serilog rende visibili/invisibili i log `Microsoft.
 
 ---
 
+## [L14] Idempotency: replay verbatim → serve bufferizzare la risposta in un middleware (non un filtro)
+
+**Contesto:** middleware `Idempotency-Key` sui POST (store + replay della prima risposta). Dettagli in
+`.claude/context/idempotency.md`.
+**Approccio errato:** pensare di catturare la risposta da rigiocare con un action/result filter MVC.
+**Errore/causa:** al momento del filtro l'header **`Location`** di un `CreatedAtActionResult` non
+esiste ancora (è generato durante la *result execution*, dall'`UrlHelper`), e il body non è ancora
+serializzato. Un filtro non vede quindi la risposta reale da memorizzare.
+**Soluzione:** **middleware** che avvolge l'intera pipeline e cattura la risposta vera bufferizzando
+lo stream: `var original = Response.Body; Response.Body = buffer; await next(); ...` poi si copia il
+buffer su `original` (per il client) e si memorizzano `StatusCode` + header `Location` + body. Per il
+fingerprint della richiesta: `Request.EnableBuffering()`, leggere il body, **riavvolgere a 0** così il
+model binding lo rilegge.
+
+**Note aggiuntive:**
+- **Memorizzare solo 2xx–4xx, mai 5xx**: un errore transitorio (DB giù) deve restare ritentabile;
+  cache-arlo bloccherebbe i retry legittimi.
+- **`IDistributedCache` non è registrato da FusionCache.** `WithDistributedCache(new RedisCache(...))`
+  configura solo FusionCache, non mette un `IDistributedCache` nel DI. Per lo store dell'idempotency
+  va registrato a parte: `AddDistributedMemoryCache()` oppure `AddStackExchangeRedisCache(...)`.
+- **`Configure<T>(IConfiguration)`** richiede il pacchetto `Microsoft.Extensions.Options.ConfigurationExtensions`
+  (come il binder in `[L11]`).
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

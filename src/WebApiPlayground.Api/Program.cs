@@ -75,6 +75,9 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
 
+    // Dopo l'autorizzazione: la storage key dell'idempotency è scopata per client (claim utente).
+    app.UseMiddleware<IdempotencyMiddleware>();
+
     app.MapApiHealthChecks();
     app.MapControllers();
 

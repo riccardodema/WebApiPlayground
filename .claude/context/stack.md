@@ -11,6 +11,7 @@
 | `Microsoft.EntityFrameworkCore.SqlServer` | Infrastructure | 10.0.0 |
 | `Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore` | Infrastructure | 10.0.0 |
 | `Microsoft.Extensions.Configuration.Binder` | Infrastructure | 10.0.0 |
+| `Microsoft.Extensions.Options.ConfigurationExtensions` | Infrastructure | 10.0.0 |
 | `Microsoft.Extensions.Caching.StackExchangeRedis` | Infrastructure | 10.0.0 |
 | `ZiggyCreatures.FusionCache` | Infrastructure | 2.6.0 |
 | `ZiggyCreatures.FusionCache.Serialization.SystemTextJson` | Infrastructure | 2.6.0 |
@@ -72,4 +73,13 @@ Default sensati: senza configurazione la cache è solo L1 in memoria. Valorizzan
 
 ```json
 { "Cache": { "Duration": "00:01:00", "FailSafeMaxDuration": "02:00:00", "Redis": { "ConnectionString": "" } } }
+```
+
+## Config idempotency (sezione `Idempotency`)
+
+Store su `IDistributedCache` (memoria; Redis se `Cache:Redis:ConnectionString` valorizzata). Vedi
+`.claude/context/idempotency.md`.
+
+```json
+{ "Idempotency": { "Ttl": "24:00:00" } }
 ```
