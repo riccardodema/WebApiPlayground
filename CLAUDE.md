@@ -15,6 +15,7 @@
 | Validazione input (FluentValidation, 400 ProblemDetails con `errors`, messaggi parlanti, regole nello schema OpenAPI) | `.claude/context/validation.md` + `.claude/lessons.md` [L10] |
 | Health check / probe liveness-readiness (`/health/live`, `/health/ready`, probe DB, orchestratore) | `.claude/context/health-checks.md` |
 | Caching (HTTP ETag/Cache-Control/304, HybridCache, FusionCache, L1/L2 Redis + backplane multi-istanza, invalidazione per tag) | `.claude/context/caching.md` + `.claude/lessons.md` [L11] |
+| Idempotency (`Idempotency-Key` sui POST, replay prima risposta, 422 su riuso, store IDistributedCache Redis-ready, exactly-once) | `.claude/context/idempotency.md` + `.claude/lessons.md` [L14] |
 | Package, URL, comandi dotnet/ef | `.claude/context/stack.md` |
 | Prima di usare Swagger/Swashbuckle o configurare OpenAPI | `.claude/lessons.md` |
 | Errori ricorrenti o approcci da evitare | `.claude/lessons.md` |

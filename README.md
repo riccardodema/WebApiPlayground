@@ -70,6 +70,26 @@ DB query, re-map, re-serialize and re-transfer identical bytes:
 
 Details and the speed/latency rationale: [`.claude/context/caching.md`](.claude/context/caching.md).
 
+## Idempotency
+
+`POST` is not idempotent: if the response to a create is lost (timeout, dropped connection, an HTTP
+client that auto-retries, a double click), the client retries and a **duplicate** resource is created.
+A client supplies a unique `Idempotency-Key` header; the first request is executed and its response
+stored, and any retry with the same key **replays that stored response** without re-running the write
+— an **exactly-once** effect on writes.
+
+- **No duplicates on retry**, and the retry gets the *same* response verbatim (status, `Location`,
+  body), marked with `Idempotency-Replayed: true`.
+- **Key reuse is caught**: the same key with a *different* payload returns **422**, instead of silently
+  replaying the wrong response.
+- **Stored outcomes are deterministic** (2xx–4xx); 5xx is never stored so transient failures stay
+  retriable.
+- **Multi-instance ready**: the store is an `IDistributedCache` (in-memory now, Redis when a connection
+  string is configured), so the key works across instances — config-only.
+
+The de-facto standard pattern (Stripe, PayPal, IETF draft). Implemented as a middleware on POSTs;
+opt-in via the header. Details: [`.claude/context/idempotency.md`](.claude/context/idempotency.md).
+
 ## Database as code
 
 The schema is **versioned in the solution** as a SQL Database Project

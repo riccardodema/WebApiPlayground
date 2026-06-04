@@ -45,7 +45,9 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
   il multi-istanza). Storia completa di **cache invalidation** per tag su create/update/delete.
   Decoratore `CachingBooksService` (Application) sull'astrazione `HybridCache`; FusionCache/Redis in
   Infrastructure (regola architetturale che lo enforce). Vedi `.claude/context/caching.md`, `[L11]`.
-- ⬜ **Idempotency**: middleware `Idempotency-Key` per i POST (store + replay della prima risposta).
+- ✅ **Idempotency**: middleware `Idempotency-Key` per i POST (store + replay della prima risposta;
+  422 sul riuso con payload diverso; store `IDistributedCache` memory ora, Redis-ready come la cache).
+  Semantica exactly-once → niente duplicati sui retry. Vedi `.claude/context/idempotency.md`, `[L14]`.
 - ⬜ **Rate limiting**: rate limiter nativo .NET con policy (es. fixed/sliding window) + 429
   ProblemDetails.
 - ⬜ **API versioning** (`Asp.Versioning`) + **optimistic concurrency** (rowversion/ETag) sul PUT.
