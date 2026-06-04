@@ -22,6 +22,13 @@ public sealed class TestAuthHandler : AuthenticationHandler<AuthenticationScheme
     public const string ScopeHeader = "X-Test-Scope";
     public const string RolesHeader = "X-Test-Roles";
 
+    /// <summary>
+    /// Identità del client simulata (claim <c>NameIdentifier</c>). Permette ai test di isolare la
+    /// partizione del rate limiter (limiter in-memory singleton condiviso): client distinti = bucket
+    /// distinti. Assente → <c>"test-user"</c>, così i test esistenti restano invariati.
+    /// </summary>
+    public const string UserHeader = "X-Test-User";
+
     public TestAuthHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
@@ -38,7 +45,10 @@ public sealed class TestAuthHandler : AuthenticationHandler<AuthenticationScheme
         if (!hasScope && !hasRoles)
             return Task.FromResult(AuthenticateResult.NoResult());
 
-        var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, "test-user") };
+        var userId = Request.Headers.TryGetValue(UserHeader, out var user) && !string.IsNullOrWhiteSpace(user)
+            ? user.ToString()
+            : "test-user";
+        var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, userId) };
 
         // claim "scp": gli scope sono separati da spazio in un singolo claim (come nei token reali)
         if (hasScope && !string.IsNullOrWhiteSpace(scope))

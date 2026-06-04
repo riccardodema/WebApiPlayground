@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using WebApiPlayground.Api.Authorization;
+using WebApiPlayground.Api.RateLimiting;
 using WebApiPlayground.Application.DTOs;
 using WebApiPlayground.Application.Interfaces;
 
@@ -10,7 +12,8 @@ namespace WebApiPlayground.Api.Controllers;
 /// CRUD sui libri. Tutti gli endpoint richiedono un access token (Entra ID) e una policy
 /// read/write. Gli errori sono restituiti come <c>application/problem+json</c> (RFC 7807):
 /// 400 per input non valido (con i campi e i messaggi nella proprietà <c>errors</c>),
-/// 401/403 per autenticazione/autorizzazione, 404 se la risorsa non esiste.
+/// 401/403 per autenticazione/autorizzazione, 404 se la risorsa non esiste, 429 se si supera il
+/// rate limit (letture e scritture hanno policy distinte; vedi <c>.claude/context/rate-limiting.md</c>).
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -42,6 +45,7 @@ public class BooksController : ControllerBase
     /// <response code="400">Parametri di paginazione fuori range (es. <c>pageSize=0</c> o &gt; 100).</response>
     [HttpGet]
     [Authorize(Policy = AuthorizationPolicies.ReadBooks)]
+    [EnableRateLimiting(RateLimitingOptions.PolicyNames.Read)]
     [ProducesResponseType(typeof(PagedResult<BookDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetBooks([FromQuery] BooksQueryParameters query)
@@ -64,6 +68,7 @@ public class BooksController : ControllerBase
     /// <response code="404">Nessun libro con l'Id indicato.</response>
     [HttpGet("{id:int}")]
     [Authorize(Policy = AuthorizationPolicies.ReadBooks)]
+    [EnableRateLimiting(RateLimitingOptions.PolicyNames.Read)]
     [ProducesResponseType(typeof(BookDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetBookById([FromRoute] int id)
@@ -92,6 +97,7 @@ public class BooksController : ControllerBase
     /// <response code="400">Body non valido (vedi <c>errors</c> per i campi e come correggerli).</response>
     [HttpPost]
     [Authorize(Policy = AuthorizationPolicies.WriteBooks)]
+    [EnableRateLimiting(RateLimitingOptions.PolicyNames.Write)]
     [ProducesResponseType(typeof(BookDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateBook([FromBody] CreateBookDto dto)
@@ -122,6 +128,7 @@ public class BooksController : ControllerBase
     /// <response code="404">Nessun libro con l'Id indicato.</response>
     [HttpPut("{id:int}")]
     [Authorize(Policy = AuthorizationPolicies.WriteBooks)]
+    [EnableRateLimiting(RateLimitingOptions.PolicyNames.Write)]
     [ProducesResponseType(typeof(BookDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -149,6 +156,7 @@ public class BooksController : ControllerBase
     /// <response code="404">Nessun libro con l'Id indicato.</response>
     [HttpDelete("{id:int}")]
     [Authorize(Policy = AuthorizationPolicies.WriteBooks)]
+    [EnableRateLimiting(RateLimitingOptions.PolicyNames.Write)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteBook([FromRoute] int id)

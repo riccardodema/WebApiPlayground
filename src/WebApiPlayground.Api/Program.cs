@@ -36,6 +36,7 @@ try
             options.InvalidModelStateResponseFactory = ValidationProblemDetailsFactory.Create);
 
     builder.Services.AddApiProblemDetails();
+    builder.Services.AddApiRateLimiting(builder.Configuration);
     builder.Services.AddOpenApi(options =>
     {
         options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
@@ -45,6 +46,8 @@ try
         options.AddOperationTransformer<IdempotencyOperationTransformer>();
         // Documenta nel contratto l'HTTP caching dei GET (ETag/Cache-Control/If-None-Match + 304).
         options.AddOperationTransformer<CachingOperationTransformer>();
+        // Documenta nel contratto il rate limiting (429 ProblemDetails + header Retry-After).
+        options.AddOperationTransformer<RateLimitingOperationTransformer>();
     });
 
     builder.Services.AddApplication();
@@ -78,6 +81,11 @@ try
 
     app.UseAuthentication();
     app.UseAuthorization();
+
+    // Dopo l'autorizzazione (così la partizione vede il claim utente) e prima dell'idempotency:
+    // rifiuta presto le richieste in eccesso, prima del buffering del body fatto dal middleware
+    // di idempotency. Vedi .claude/lessons.md [L15].
+    app.UseRateLimiter();
 
     // Dopo l'autorizzazione: la storage key dell'idempotency è scopata per client (claim utente).
     app.UseMiddleware<IdempotencyMiddleware>();

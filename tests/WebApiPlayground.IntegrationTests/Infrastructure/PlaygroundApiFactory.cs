@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.MsSql;
 using WebApiPlayground.Application.Caching;
@@ -17,6 +18,16 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // Alza i limiti a valori altissimi: il rate limiter è un singleton in-memory condiviso da
+        // tutta la collection, e le richieste autenticate condividono la stessa partizione
+        // ("test-user") — coi limiti reali la suite cumulativa farebbe 429. I test dedicati al rate
+        // limiting li riabbassano via WithWebHostBuilder. Vedi .claude/lessons.md [L15].
+        builder.ConfigureAppConfiguration(config => config.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["RateLimiting:Read:PermitLimit"] = "1000000",
+            ["RateLimiting:Write:PermitLimit"] = "1000000",
+        }));
+
         builder.ConfigureServices(services =>
         {
             var descriptor = services.SingleOrDefault(

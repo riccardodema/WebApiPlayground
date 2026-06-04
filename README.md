@@ -39,6 +39,7 @@ Clean Architecture, dependencies point inwards (outer layers depend on inner, ne
 | Structured logging + correlation id | Serilog + `Api/Middleware/CorrelationIdMiddleware` |
 | RFC 7807 error responses (ProblemDetails) | `Api/ErrorHandling/GlobalExceptionHandler` |
 | Liveness / readiness health probes | `Api/HealthChecks` (`/health/live`, `/health/ready`) |
+| Rate limiting (sliding window, per-client) | `Api/RateLimiting`, `Api/Extensions/RateLimitingExtensions` |
 
 ## Stack
 
@@ -46,6 +47,7 @@ Clean Architecture, dependencies point inwards (outer layers depend on inner, ne
 - **Scalar** for OpenAPI UI (Swashbuckle is incompatible with .NET 10)
 - **Serilog** structured logging
 - **HybridCache via FusionCache** (Redis-ready) + **HTTP caching (ETag)**
+- **Native .NET rate limiting** (`System.Threading.RateLimiting`, sliding window)
 - **xUnit · Moq · Testcontainers.MsSql** for testing
 - **SQL Database Project (DACPAC)** for the database schema
 
@@ -89,6 +91,32 @@ stored, and any retry with the same key **replays that stored response** without
 
 The de-facto standard pattern (Stripe, PayPal, IETF draft). Implemented as a middleware on POSTs;
 opt-in via the header. Details: [`.claude/context/idempotency.md`](.claude/context/idempotency.md).
+
+## Rate limiting
+
+An exposed API has to survive abuse: one client hammering it (scraping, a retry storm, a bug) can
+starve everyone else, saturate the database and inflate cost. The **native .NET rate limiter**
+(`AddRateLimiter`/`UseRateLimiter`, in the shared framework — no extra package) caps how fast each
+client can call, and beyond the cap answers **`429 Too Many Requests`** instead of doing the work.
+
+- **Sliding window**, not fixed window. "N requests in the last 60s" — and unlike a fixed window it
+  doesn't allow a **2× burst across the boundary** of two calendar windows. `QueueLimit = 0`, so an
+  over-limit request is **rejected immediately** (deterministic backpressure, no hidden latency).
+- **Per-client partitions.** The bucket key is the authenticated user (the same claim the idempotency
+  key is scoped by), falling back to the IP for anonymous callers — so one noisy client can't eat
+  everyone's quota, rather than a single global limit.
+- **Read vs write, with reasoned limits.** Reads are generous (**100 / 60s** ≈ 1.6 req/s, well above
+  any human-driven UI), writes are stricter (**20 / 60s**) because they mutate state, hit the DB and
+  bust caches. They're **independent buckets** (exhausting writes doesn't block reads), applied with
+  `[EnableRateLimiting("read"|"write")]`. Pairs with idempotency: a same-key retry storm is replayed
+  by idempotency, a different-payload storm is capped here.
+- **429 as RFC 7807 ProblemDetails**, same `correlationId`/`traceId` as every other error, plus a
+  **`Retry-After`** header — and the `429` is **documented in the OpenAPI contract**, not implicit.
+- **Per-instance** today (in-memory); a Redis-backed distributed limiter is the scale-out path, the
+  same way caching and idempotency already gate Redis by config.
+
+Limits are config-driven and read lazily at request time. Details:
+[`.claude/context/rate-limiting.md`](.claude/context/rate-limiting.md).
 
 ## Database as code
 

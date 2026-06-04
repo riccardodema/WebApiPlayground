@@ -48,8 +48,12 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
 - ✅ **Idempotency**: middleware `Idempotency-Key` per i POST (store + replay della prima risposta;
   422 sul riuso con payload diverso; store `IDistributedCache` memory ora, Redis-ready come la cache).
   Semantica exactly-once → niente duplicati sui retry. Vedi `.claude/context/idempotency.md`, `[L14]`.
-- ⬜ **Rate limiting**: rate limiter nativo .NET con policy (es. fixed/sliding window) + 429
-  ProblemDetails.
+- ✅ **Rate limiting**: rate limiter **nativo .NET** (`AddRateLimiter`/`UseRateLimiter`) con due policy
+  **sliding window** — `read` (100/60s) e `write` (20/60s), valori motivati — partizionate per client
+  (utente autenticato → claim, anonimo → IP, come l'idempotency). Oltre il limite → **429 ProblemDetails**
+  (RFC 7807, stesso `correlationId`/`traceId`) con header `Retry-After`; 429 documentato nel contratto
+  OpenAPI. In-memory per-istanza (Redis = percorso di scale-out, come cache/idempotency). Vedi
+  `.claude/context/rate-limiting.md`, `[L15]`.
 - ⬜ **API versioning** (`Asp.Versioning`) + **optimistic concurrency** (rowversion/ETag) sul PUT.
 
 ## Tier 3 — Observability distribuita

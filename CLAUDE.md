@@ -16,6 +16,7 @@
 | Health check / probe liveness-readiness (`/health/live`, `/health/ready`, probe DB, orchestratore) | `.claude/context/health-checks.md` |
 | Caching (HTTP ETag/Cache-Control/304, HybridCache, FusionCache, L1/L2 Redis + backplane multi-istanza, invalidazione per tag) | `.claude/context/caching.md` + `.claude/lessons.md` [L11] |
 | Idempotency (`Idempotency-Key` sui POST, replay prima risposta, 422 su riuso, store IDistributedCache Redis-ready, exactly-once) | `.claude/context/idempotency.md` + `.claude/lessons.md` [L14] |
+| Rate limiting (rate limiter nativo .NET, policy sliding window read/write, partizione per client, 429 ProblemDetails + `Retry-After`, `[EnableRateLimiting]`) | `.claude/context/rate-limiting.md` + `.claude/lessons.md` [L15] |
 | Package, URL, comandi dotnet/ef | `.claude/context/stack.md` |
 | Prima di usare Swagger/Swashbuckle o configurare OpenAPI | `.claude/lessons.md` |
 | Errori ricorrenti o approcci da evitare | `.claude/lessons.md` |
