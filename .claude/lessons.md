@@ -345,6 +345,43 @@ non matcha alcun endpoint → 404 (con i reader header/query si avrebbe 400 + `a
 
 ---
 
+## [L18] OpenTelemetry: SDK solo in Api, EF beta, bridge Serilog, listener globali nei test
+
+**Contesto:** traces + metrics + logs via OTLP, auto-instrumentation + source/meter custom. Dettagli in
+`.claude/context/opentelemetry.md`.
+
+**Errori e cause:**
+- **Strumentare il business senza far entrare l'SDK nei layer interni.** Mettere l'SDK OpenTelemetry (o gli
+  exporter) in Application/Domain violerebbe i NetArchTest (no AspNetCore/EF/Infra). → Si strumenta con le
+  **primitive BCL** (`System.Diagnostics.ActivitySource`/`Metrics.Meter`) in `BooksDiagnostics` (Application);
+  l'SDK e `AddSource`/`AddMeter` stanno **solo** nella composition root (Api). `System.Diagnostics.DiagnosticSource`
+  è transitivo via `Microsoft.Extensions.Caching.Hybrid` (nessun PackageReference esplicito necessario).
+- **EF Core instrumentation è -beta** (`1.15.1-beta.1`): semantic convention DB sperimentali, nomi/attributi
+  span instabili. → Inclusa come scelta consapevole (span SQL nelle trace); i test asseriscono lo span DB in
+  modo **soft** (Kind=`Client` nello stesso trace, non il nome esatto).
+- **Log via Serilog, non il logging provider OTel.** Il progetto è Serilog-centrico → si usa
+  `Serilog.Sinks.OpenTelemetry` (config-gated nel lambda `UseSerilog`): riattacca `TraceId`/`SpanId` e porta
+  le property del `LogContext` (incluso il `CorrelationId`). NON chiamare `.WithLogging()` sull'SDK (doppio
+  canale di log). `UseOtlpExporter()` cross-cutting copre traces+metrics in un colpo (DRY), ma è incompatibile
+  con `AddOtlpExporter` per-segnale.
+- **`MetricCollector<T>` per testare le metriche** (`Microsoft.Extensions.Diagnostics.Testing`): il parametro
+  è `meterScope` (non `scope`); con un `Meter` creato via `new Meter(name, version)` lo scope è `null`. Il
+  contatore è un **singleton di processo**: altri test lo incrementano in parallelo → asserire il
+  deterministico (ogni misura = 1, `Count >= n`), non un totale esatto.
+- **`ActivityListener` è process-global.** Nei test cattura span anche da altri test in parallelo. → Unit:
+  filtrare per tag univoco (`book.id`) + `ConcurrentBag`. Integration: i test della collection "Integration"
+  girano **in serie**, quindi la finestra `using (listener)` non si sovrappone; comunque `Dispose` per test.
+- **traceId W3C solo con un listener attivo.** Senza OTel `Activity.Current` può essere null e il `traceId`
+  dei ProblemDetails ricade su `TraceIdentifier` (non-W3C). Con l'AspNetCore instrumentation attiva,
+  `Activity.Current.Id` è in formato W3C (55 char, `00-…`): un test lo asserisce come guardia di "OTel attivo".
+- **Filtrare gli endpoint di infrastruttura** (`/health`, `/openapi`, `/scalar`) dalle trace (rumore ad alta
+  frequenza) via `AddAspNetCoreInstrumentation(o => o.Filter = …)`.
+
+**Soluzione:** vedi `Api/Extensions/OpenTelemetryExtensions.cs`, `Application/Diagnostics/BooksDiagnostics.cs`,
+il bridge in `Program.cs` e i test in `tests/.../Observability/` + `Tests/Diagnostics/BooksDiagnosticsTests.cs`.
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

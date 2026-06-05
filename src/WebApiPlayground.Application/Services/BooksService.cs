@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using WebApiPlayground.Application.Diagnostics;
 using WebApiPlayground.Application.DTOs;
 using WebApiPlayground.Application.Interfaces;
 using WebApiPlayground.Application.Querying;
@@ -72,12 +73,21 @@ public class BooksService : IBooksService
 
     public async Task<BookDto> CreateBookAsync(CreateBookDto dto)
     {
+        // Span di business custom: misura la creazione nel waterfall della trace, annidato sotto lo span
+        // HTTP server. null (zero overhead) se nessun listener OTel è in ascolto. Vedi BooksDiagnostics.
+        using var activity = BooksDiagnostics.StartCreateBookActivity();
+        activity?.SetTag("book.author_id", dto.AuthorId);
+
         _logger.LogDebug(
             "Building book entity — Title: '{BookTitle}', AuthorId: {AuthorId}",
             dto.Title, dto.AuthorId);
 
         var book = new Book { Title = dto.Title, AuthorId = dto.AuthorId };
         var created = await _repository.CreateAsync(book);
+
+        // Metrica di dominio: contatore dei libri creati con successo (serie temporale per dashboard/alert).
+        activity?.SetTag("book.id", created.Id);
+        BooksDiagnostics.RecordBookCreated();
 
         _logger.LogDebug(
             "Book entity persisted with ID {BookId}, author resolved as '{AuthorName}'",
