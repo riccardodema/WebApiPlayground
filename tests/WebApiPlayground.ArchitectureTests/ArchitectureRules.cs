@@ -39,6 +39,12 @@ internal static class ArchitectureRules
     internal static readonly string[] ResilienceImplementationNamespaces =
         ["Polly", "Microsoft.Extensions.Http"];
 
+    // Background processing: Application dipende solo dall'astrazione IBackgroundTaskQueue<T> (primitive BCL).
+    // Il BackgroundService (Microsoft.Extensions.Hosting) e la coda su System.Threading.Channels sono il
+    // meccanismo, confinato a Infrastructure. Stesso principio di cache e resilienza.
+    internal static readonly string[] BackgroundProcessingImplementationNamespaces =
+        ["Microsoft.Extensions.Hosting", "System.Threading.Channels"];
+
     // Assembly anchor: un tipo pubblico stabile per ciascun layer.
     internal static readonly Assembly DomainAssembly = typeof(Book).Assembly;
     internal static readonly Assembly ApplicationAssembly = typeof(IBookRepository).Assembly;

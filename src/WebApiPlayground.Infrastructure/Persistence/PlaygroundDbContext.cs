@@ -9,6 +9,7 @@ public class PlaygroundDbContext : DbContext
 
     public DbSet<Book> Books { get; set; }
     public DbSet<Author> Authors { get; set; }
+    public DbSet<BookPopularitySnapshot> BookPopularitySnapshots { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,6 +45,27 @@ public class PlaygroundDbContext : DbContext
                 .HasForeignKey(b => b.AuthorId)
                 .HasConstraintName("FK_Books_Authors")
                 .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<BookPopularitySnapshot>(entity =>
+        {
+            entity.ToTable("BookPopularitySnapshots");
+
+            // PK = FK verso Books (relazione 1:1). La chiave NON è store-generated: la fornisce il worker.
+            entity.HasKey(s => s.BookId);
+            entity.Property(s => s.BookId).ValueGeneratedNever();
+
+            entity.Property(s => s.Source)
+                .HasMaxLength(50)
+                .IsUnicode(false)   // VARCHAR(50)
+                .IsRequired();
+
+            // Cascade: cancellando il libro sparisce anche il suo snapshot (nessuna riga orfana).
+            entity.HasOne<Book>()
+                .WithOne()
+                .HasForeignKey<BookPopularitySnapshot>(s => s.BookId)
+                .HasConstraintName("FK_BookPopularitySnapshots_Books")
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         base.OnModelCreating(modelBuilder);

@@ -464,6 +464,51 @@ in `.claude/context/resilience.md` (sez. *Caching della chiamata esterna*).
 
 ---
 
+## [L21] Background processing (`BackgroundService` + `Channel`): eccezione che abbatte l'host, scope-per-item, test deterministici
+
+**Contesto:** arricchimento popolarità asincrono (Tier 4 step 1). Producer event-driven sulle write → coda
+bounded su `Channel` → `BackgroundService` consumer. Dettagli in `.claude/context/background-processing.md`.
+
+**Errori e cause:**
+- **Un'eccezione non gestita in `ExecuteAsync` ferma l'INTERO host.** Da .NET 6 il default è
+  `BackgroundServiceExceptionBehavior.StopHost`: se il processing di un item lancia e l'eccezione esce dal loop,
+  l'app si spegne. → La base `BackgroundQueueWorker<T>` avvolge **ogni item** in try/catch: l'errore è loggato +
+  contato (`background.tasks.failed`) e il loop **prosegue**. Un item velenoso non fa cadere il worker né l'host.
+- **Captive dependency: scoped dentro un singleton.** `AddHostedService` registra il worker come **singleton**;
+  iniettarci `DbContext`/repository (scoped) li congelerebbe per tutta la vita del processo (bug di vita +
+  thread-safety). → `IServiceScopeFactory.CreateScope()` **per item**, e si risolvono le scoped dentro lo scope.
+- **Backpressure: bloccare la write o scartare?** Coda **bounded** + `TryWrite` non bloccante: piena → drop +
+  metrica (`dropped`), la richiesta HTTP non rallenta mai. Conscio: best-effort, sotto sovraccarico si perde
+  qualche arricchimento. L'alternativa (`WriteAsync` che attende) rallenterebbe la write.
+- **`await` vietato in un filtro `catch when`.** Il fallback snapshot in `BookPopularityService` non può fare
+  `catch (...) when (await ...)` (CS error). → si cattura, si fa il lookup **dentro** il catch e si fa `throw;`
+  (rethrow) se non c'è snapshot → resta 503.
+- **Test async = flaky se aspetti "a tempo".** Mai `Task.Delay(n)` poi assert. → **unit**: avvia il worker
+  (`StartAsync`), accoda, e attendi un `TaskCompletionSource` segnalato dentro `ProcessAsync` (barriera
+  deterministica; per "non deve succedere X" usa un secondo item come barriera FIFO). **integration**: polling
+  con timeout sullo store. Il tempo nel worker si controlla iniettando un `TimeProvider` fisso (la base risolve
+  `TimeProvider` dallo scope).
+- **WebApplicationFactory avvia gli hosted service** → l'integration test esercita il worker reale; la tabella
+  `BookPopularitySnapshots` nasce da `EnsureCreated` (è nel modello EF), e il reset della factory la svuota
+  (ordine FK / cascade) come già per cache+DB [L11].
+- **Nuovo `Meter`/`ActivitySource` vanno registrati per nome** in `AddApiObservability` (`AddSource`/`AddMeter`),
+  altrimenti metriche/trace del background non vengono esportate. Lo span di processing si aggancia al
+  `ActivityContext` catturato all'enqueue → correlazione con la trace della write.
+- **Il fallback snapshot cambia la semantica del 503.** Ora `GET popularity` dà 503 **solo** se il live fallisce
+  *e* non c'è snapshot. I test "dipendenza giù → 503" devono partire **senza** snapshot (libro seedato diretto,
+  nessun enqueue) — restano verdi proprio perché il seed diretto non accoda nulla.
+- **Debolezza voluta = at-most-once.** Coda in-memory, enqueue non transazionale con la write: item persi al
+  crash, drop su coda piena. Accettato (read normale è fresco, snapshot solo per outage) → è il **movente
+  dell'Outbox** (step 2).
+
+**Soluzione:** vedi `Infrastructure/BackgroundProcessing/` (`ChannelBackgroundTaskQueue`, `BackgroundQueueWorker`,
+`PopularityEnrichmentWorker`), la registrazione in `Infrastructure/DependencyInjection.cs` (`AddBackgroundProcessing`),
+il producer in `Application/Services/BooksService.cs`, il fallback in `BookPopularityService.cs`, la regola in
+`tests/.../ArchitectureTests/LayerDependencyTests.cs` e i test in `tests/.../BackgroundProcessing/` +
+`tests/.../IntegrationTests/Popularity/PopularityEnrichmentTests.cs`.
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

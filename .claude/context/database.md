@@ -15,6 +15,7 @@ database/
 ├── deploy.sh                               # build + publish|script
 ├── Schema/Tables/Authors.sql               # dbo.Authors (PK_Authors)
 ├── Schema/Tables/Books.sql                 # dbo.Books  (PK_Books, FK_Books_Authors)
+├── Schema/Tables/BookPopularitySnapshots.sql # dbo.BookPopularitySnapshots (PK=FK BookId, cascade) — snapshot durevole popolarità
 └── Scripts/PostDeployment/Script.PostDeployment.sql  # seed idempotente (MERGE)
 ```
 
@@ -23,6 +24,10 @@ database/
 - **Fonte di verità = SQL project.** Il modello EF (`PlaygroundDbContext.OnModelCreating`)
   è mappato 1:1: tipi (`varchar(100)` FullName, `nvarchar(100)` Title), `IsRequired`,
   FK `FK_Books_Authors` con `DeleteBehavior.NoAction`. Se cambi lo schema, aggiorna entrambi.
+- **`BookPopularitySnapshots`** (Tier 4): `BookId` è insieme **PK e FK** verso `Books` (1:1),
+  non IDENTITY (la chiave la fornisce il worker); `Source varchar(50)`, `RetrievedAt datetimeoffset`,
+  metriche nullable; FK `FK_BookPopularitySnapshots_Books` con **`ON DELETE CASCADE`** (mappato in EF come
+  `DeleteBehavior.Cascade`). È lo store durevole scritto in background. Vedi `.claude/context/background-processing.md`.
 - I file in `Scripts/**` NON sono schema: sono esclusi dal Build nel `.sqlproj`
   (`<Build Remove="Scripts/**/*.sql" />`) e dichiarati come `<PostDeploy>`.
 - Il post-deploy gira a **ogni** publish → deve restare idempotente (`MERGE` + `IDENTITY_INSERT`).

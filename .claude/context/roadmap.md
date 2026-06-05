@@ -85,8 +85,14 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
 
 ## Tier 4 — Asincronia / messaging (capstone)
 
-- ⬜ **Background processing in-process**: `IHostedService` + `System.Threading.Channels`
-  (es. job async "reindex"/notifica), con backpressure.
+- ✅ **Background processing in-process**: `IHostedService` + `System.Threading.Channels` con backpressure.
+  Arricchimento popolarità **event-driven** sulle write: `POST/PUT /books` accoda (best-effort, non bloccante)
+  su una coda bounded; un `BackgroundService` (base riusabile `BackgroundQueueWorker<T>`: scope-per-item,
+  isolamento eccezioni, shutdown graceful) chiama il client resiliente (scalda la cache) e persiste uno
+  **snapshot durevole** su DB. Read invariato (cache→live), snapshot solo come **fallback d'outage**; niente
+  refresh periodico né SWR. Astrazione `IBackgroundTaskQueue<T>` in Application, Channel/host in Infrastructure
+  (regola NetArchTest). Debolezza voluta (in-memory, at-most-once) = movente dell'Outbox. Vedi
+  `.claude/context/background-processing.md`, `[L21]`.
 - ⬜ **Outbox pattern** + broker (**Azure Service Bus**): scrittura transazionale outbox →
   dispatcher → consumer. Il pezzo più "distributed systems".
 

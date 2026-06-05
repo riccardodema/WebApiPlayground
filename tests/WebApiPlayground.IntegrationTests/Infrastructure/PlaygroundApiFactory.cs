@@ -96,6 +96,9 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlaygroundDbContext>();
+        // Ordine FK: gli snapshot referenziano i libri (cancellare i libri li farebbe cascadere comunque,
+        // ma l'esplicito tiene il reset leggibile e indipendente dalla cascade).
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM BookPopularitySnapshots");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM Books");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM Authors");
 

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Diagnostics.Metrics.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
+using WebApiPlayground.Application.BackgroundProcessing;
 using WebApiPlayground.Application.Diagnostics;
 using WebApiPlayground.Application.DTOs;
 using WebApiPlayground.Application.Interfaces;
@@ -20,11 +21,14 @@ public class BooksServiceTests
     private static readonly string VersionBase64 = Convert.ToBase64String(Version);
 
     private readonly Mock<IBookRepository> _repositoryMock = new();
+    private readonly Mock<IBackgroundTaskQueue<PopularityEnrichmentRequest>> _queueMock = new();
     private readonly BooksService _sut;
 
     public BooksServiceTests()
     {
-        _sut = new BooksService(_repositoryMock.Object, NullLogger<BooksService>.Instance);
+        // Default: la coda accetta l'enqueue (i test che non lo verificano non se ne curano).
+        _queueMock.Setup(q => q.TryEnqueue(It.IsAny<PopularityEnrichmentRequest>())).Returns(true);
+        _sut = new BooksService(_repositoryMock.Object, _queueMock.Object, NullLogger<BooksService>.Instance);
     }
 
     private static BooksQueryParameters Query(
@@ -190,6 +194,55 @@ public class BooksServiceTests
         var snapshot = metrics.GetMeasurementSnapshot();
         Assert.True(snapshot.Count >= 1);
         Assert.All(snapshot, m => Assert.Equal(1, m.Value));
+    }
+
+    [Fact]
+    public async Task CreateBookAsync_EnqueuesPopularityEnrichment_WithCreatedId()
+    {
+        var dto = new CreateBookDto("Clean Code", 1);
+        var createdBook = new Book { Id = 11, Title = "Clean Code", AuthorId = 1, Author = new Author { Id = 1, FullName = "Robert C. Martin" } };
+        _repositoryMock.Setup(r => r.CreateAsync(It.IsAny<Book>())).ReturnsAsync(createdBook);
+
+        await _sut.CreateBookAsync(dto);
+
+        // L'arricchimento popolarità è accodato per il libro appena creato (chiamata esterna fuori dal path write).
+        _queueMock.Verify(q => q.TryEnqueue(It.Is<PopularityEnrichmentRequest>(r => r.BookId == 11)), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateBookAsync_DoesNotThrow_WhenEnrichmentQueueIsFull()
+    {
+        // Coda piena = best-effort drop: la write resta valida (ritorna il DTO), niente eccezione.
+        _queueMock.Setup(q => q.TryEnqueue(It.IsAny<PopularityEnrichmentRequest>())).Returns(false);
+        var dto = new CreateBookDto("Clean Code", 1);
+        var createdBook = new Book { Id = 12, Title = "Clean Code", AuthorId = 1, Author = new Author { Id = 1, FullName = "Robert C. Martin" } };
+        _repositoryMock.Setup(r => r.CreateAsync(It.IsAny<Book>())).ReturnsAsync(createdBook);
+
+        var result = await _sut.CreateBookAsync(dto);
+
+        Assert.Equal(12, result.Id);
+    }
+
+    [Fact]
+    public async Task UpdateBookAsync_EnqueuesPopularityEnrichment_WhenBookExists()
+    {
+        var dto = new UpdateBookDto("Refactoring", 3);
+        var updatedBook = new Book { Id = 5, Title = "Refactoring", AuthorId = 3, Author = new Author { Id = 3, FullName = "Martin Fowler" } };
+        _repositoryMock.Setup(r => r.UpdateAsync(It.IsAny<Book>())).ReturnsAsync(updatedBook);
+
+        await _sut.UpdateBookAsync(5, dto, Version);
+
+        _queueMock.Verify(q => q.TryEnqueue(It.Is<PopularityEnrichmentRequest>(r => r.BookId == 5)), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateBookAsync_DoesNotEnqueue_WhenBookNotFound()
+    {
+        _repositoryMock.Setup(r => r.UpdateAsync(It.IsAny<Book>())).ReturnsAsync((Book?)null);
+
+        await _sut.UpdateBookAsync(999, new UpdateBookDto("X", 1), Version);
+
+        _queueMock.Verify(q => q.TryEnqueue(It.IsAny<PopularityEnrichmentRequest>()), Times.Never);
     }
 
     [Fact]

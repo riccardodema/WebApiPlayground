@@ -39,14 +39,16 @@ public static class OpenTelemetryExtensions
                     serviceInstanceId: Environment.MachineName)
                 .AddAttributes([new KeyValuePair<string, object>("deployment.environment", environment.EnvironmentName)]))
             .WithTracing(tracing => tracing
-                // Source custom (Books.Create) + auto-instrumentation. Il filtro scarta gli endpoint di
-                // infrastruttura (health/openapi/scalar) per non sporcare le trace con rumore non di dominio.
+                // Source custom (Books.Create, Popularity.Enrich) + auto-instrumentation. Il filtro scarta gli
+                // endpoint di infrastruttura (health/openapi/scalar) per non sporcare le trace con rumore.
                 .AddSource(BooksDiagnostics.ActivitySourceName)
+                .AddSource(BackgroundProcessingDiagnostics.ActivitySourceName)
                 .AddAspNetCoreInstrumentation(o => o.Filter = IsTraceableRequest)
                 .AddHttpClientInstrumentation()
                 .AddEntityFrameworkCoreInstrumentation())
             .WithMetrics(metrics => metrics
                 .AddMeter(BooksDiagnostics.MeterName)
+                .AddMeter(BackgroundProcessingDiagnostics.MeterName)
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation()

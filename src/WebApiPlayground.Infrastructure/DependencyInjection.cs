@@ -2,8 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using WebApiPlayground.Application.BackgroundProcessing;
 using WebApiPlayground.Application.Idempotency;
 using WebApiPlayground.Application.Interfaces;
+using WebApiPlayground.Infrastructure.BackgroundProcessing;
 using WebApiPlayground.Infrastructure.Caching;
 using WebApiPlayground.Infrastructure.HealthChecks;
 using WebApiPlayground.Infrastructure.Idempotency;
@@ -24,9 +26,11 @@ public static class DependencyInjection
             options.UseSqlServer(configuration.GetConnectionString("Default")));
 
         services.AddScoped<IBookRepository, BookRepository>();
+        services.AddScoped<IBookPopularitySnapshotRepository, BookPopularitySnapshotRepository>();
 
         AddCaching(services, configuration);
         AddIdempotency(services, configuration);
+        AddBackgroundProcessing(services, configuration);
 
         // Dipendenza esterna (Open Library) come HttpClient tipizzato + pipeline di resilienza Polly esplicita
         // (retry/circuit-breaker/timeout). L'astrazione IBookPopularityClient è in Application; il concreto e
@@ -111,5 +115,21 @@ public static class DependencyInjection
 
         services.AddSingleton<IIdempotencyStore, DistributedCacheIdempotencyStore>();
         services.AddSingleton<KeyedAsyncLock>();
+    }
+
+    /// <summary>
+    /// Processamento asincrono in-process: la coda <see cref="IBackgroundTaskQueue{T}"/> è un
+    /// <b>singleton</b> (producer e consumer devono condividere la stessa istanza) su <c>Channel</c> bounded
+    /// (open-generic → riusabile per qualunque work item). Il <see cref="PopularityEnrichmentWorker"/> è il
+    /// consumer (hosted service) che arricchisce la popolarità fuori dal path di scrittura. L'astrazione vive
+    /// in Application, il meccanismo qui (regola NetArchTest). Vedi <c>.claude/context/background-processing.md</c>.
+    /// </summary>
+    private static void AddBackgroundProcessing(IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<BackgroundProcessingOptions>(
+            configuration.GetSection(BackgroundProcessingOptions.SectionName));
+
+        services.AddSingleton(typeof(IBackgroundTaskQueue<>), typeof(ChannelBackgroundTaskQueue<>));
+        services.AddHostedService<PopularityEnrichmentWorker>();
     }
 }

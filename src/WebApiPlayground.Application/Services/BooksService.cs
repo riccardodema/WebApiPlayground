@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using WebApiPlayground.Application.BackgroundProcessing;
 using WebApiPlayground.Application.Diagnostics;
 using WebApiPlayground.Application.DTOs;
 using WebApiPlayground.Application.Interfaces;
@@ -10,13 +12,19 @@ namespace WebApiPlayground.Application.Services;
 public class BooksService : IBooksService
 {
     private readonly IBookRepository _repository;
+    private readonly IBackgroundTaskQueue<PopularityEnrichmentRequest> _enrichmentQueue;
     private readonly ILogger<BooksService> _logger;
 
-    public BooksService(IBookRepository repository, ILogger<BooksService> logger)
+    public BooksService(
+        IBookRepository repository,
+        IBackgroundTaskQueue<PopularityEnrichmentRequest> enrichmentQueue,
+        ILogger<BooksService> logger)
     {
         ArgumentNullException.ThrowIfNull(repository);
+        ArgumentNullException.ThrowIfNull(enrichmentQueue);
         ArgumentNullException.ThrowIfNull(logger);
         _repository = repository;
+        _enrichmentQueue = enrichmentQueue;
         _logger = logger;
     }
 
@@ -93,6 +101,9 @@ public class BooksService : IBooksService
             "Book entity persisted with ID {BookId}, author resolved as '{AuthorName}'",
             created.Id, created.Author?.FullName ?? "unknown");
 
+        // Arricchimento popolarità fuori dal path di scrittura: la chiamata esterna (lenta) la fa il worker.
+        EnqueuePopularityEnrichment(created.Id);
+
         return MapToDto(created);
     }
 
@@ -116,6 +127,9 @@ public class BooksService : IBooksService
         _logger.LogDebug(
             "Book {BookId} updated, author resolved as '{AuthorName}'",
             updated.Id, updated.Author?.FullName ?? "unknown");
+
+        // Titolo/autore possono essere cambiati → la popolarità va ricalcolata in background.
+        EnqueuePopularityEnrichment(updated.Id);
 
         return MapToDto(updated);
     }
@@ -153,6 +167,21 @@ public class BooksService : IBooksService
         var book = await _repository.GetByIdAsync(id);
 
         return book is null ? null : MapToDetailsDto(book);
+    }
+
+    /// <summary>
+    /// Accoda (best-effort, non bloccante) l'arricchimento popolarità per un libro. Cattura il
+    /// <see cref="Activity.Current"/> così lo span del worker si aggancia alla trace di questa write
+    /// (correlazione oltre il confine async). Coda piena → si scarta loggando: la write resta veloce
+    /// (il drop è osservato come metrica nella coda). Vedi <c>.claude/context/background-processing.md</c>.
+    /// </summary>
+    private void EnqueuePopularityEnrichment(int bookId)
+    {
+        var request = new PopularityEnrichmentRequest(bookId, Activity.Current?.Context ?? default);
+
+        if (!_enrichmentQueue.TryEnqueue(request))
+            _logger.LogWarning(
+                "Popularity enrichment queue is full — dropping enrichment for book {BookId}", bookId);
     }
 
     private static BookDto MapToDto(Book book) =>
