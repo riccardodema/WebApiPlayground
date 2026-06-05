@@ -8,6 +8,7 @@ using WebApiPlayground.Infrastructure.Caching;
 using WebApiPlayground.Infrastructure.HealthChecks;
 using WebApiPlayground.Infrastructure.Idempotency;
 using WebApiPlayground.Infrastructure.Persistence;
+using WebApiPlayground.Infrastructure.Popularity;
 using WebApiPlayground.Infrastructure.Repositories;
 using ZiggyCreatures.Caching.Fusion;
 using ZiggyCreatures.Caching.Fusion.Backplane.StackExchangeRedis;
@@ -26,6 +27,11 @@ public static class DependencyInjection
 
         AddCaching(services, configuration);
         AddIdempotency(services, configuration);
+
+        // Dipendenza esterna (Open Library) come HttpClient tipizzato + pipeline di resilienza Polly esplicita
+        // (retry/circuit-breaker/timeout). L'astrazione IBookPopularityClient è in Application; il concreto e
+        // la resilienza restano qui (regola architetturale auto-validata). Vedi .claude/context/resilience.md.
+        services.AddBookPopularityClient(configuration);
 
         // Health check di readiness sul DB: verifica che il DbContext riesca a connettersi.
         // Tagged "ready" → esposto solo dal probe /health/ready (vedi Api/HealthChecks).

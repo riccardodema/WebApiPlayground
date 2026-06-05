@@ -1,0 +1,131 @@
+# Resilience — chiamate esterne robuste (Polly v8 / Microsoft.Extensions.Http.Resilience)
+
+> Scopo didattico: mostrare *come* un backend .NET 2026 si difende da una dipendenza esterna lenta o
+> instabile. Il dominio (libri) resta banale; il valore è l'ingegneria attorno alla chiamata HTTP in uscita.
+
+## Cosa fa questa feature
+
+Nuovo endpoint **`GET /api/v1/books/{bookId}/popularity`**: carica il libro dal nostro DB e lo arricchisce
+con i **segnali di popolarità** letti da una **dipendenza esterna**, [Open Library](https://openlibrary.org)
+(`search.json`): voto medio, numero di voti e i contatori del reading-log (da-leggere / in-lettura / già-letto).
+
+La chiamata in uscita è avvolta da una **pipeline di resilienza** (retry + circuit breaker + timeout). Se la
+dipendenza è indisponibile, l'endpoint risponde **503** (ProblemDetails RFC 7807) con `Retry-After`, **non** un
+500 opaco: un guasto *a valle* non diventa un errore *nostro*.
+
+### Perché Open Library e non "le vendite"
+
+I dati di **vendita reali** dei libri (Nielsen BookScan ecc.) **non sono gratuiti né pubblici**. Open Library
+(Internet Archive) è il miglior proxy *gratuito* di domanda/popolarità: **key-less** (nessun segreto), JSON
+stabile, limiti generosi. Modellare onestamente il dominio — "popolarità", non "vendite" — è esso stesso una
+lezione di ingegneria. Alternative valutate: Google Books (rating + `saleInfo` incostante, quota per-IP) e NYT
+Best Sellers (rank di vendita reale **ma** richiede API key → gestione segreti).
+
+## Le 4 strategie e l'ordine (conta!)
+
+La pipeline è **esplicita** (`AddResilienceHandler`, non lo standard handler) così ogni strategia è visibile,
+nominata e configurabile. Ordine **outer → inner** in
+[`BookPopularityRegistration`](../../src/WebApiPlayground.Infrastructure/Popularity/BookPopularityRegistration.cs):
+
+```
+Timeout TOTALE → Retry → Circuit breaker → Timeout PER-TENTATIVO → HttpClient → rete
+   (1)            (2)         (3)                 (4)
+```
+
+1. **Timeout totale** (outermost) — cappa l'intera sequenza retry: il chiamante non aspetta mai più di N
+   secondi, anche con tutti i retry sommati. Tradeoff: troppo corto → fallimenti falsi sotto carico; troppo
+   lungo → la latenza dei retry si accumula.
+2. **Retry** — backoff **esponenziale + jitter**, solo errori **transitori** (5xx, 408, 429,
+   `HttpRequestException`, `TimeoutRejectedException`). I **4xx non si ritentano** (riprovare un 400/404 è
+   inutile e dannoso). Il *jitter* evita il *retry storm* (tutti i client che ritentano in sincrono). Tradeoff:
+   retry solo su operazioni **idempotenti** — qui è una GET, quindi sicuro; su una POST non idempotente i retry
+   duplicherebbero gli effetti (mitigato altrove dall'**idempotency**, vedi [L14]).
+3. **Circuit breaker** — se l'upstream è giù, dopo una frazione di fallimenti nella finestra il circuito si
+   **apre** e fa **fail-fast** (`BrokenCircuitException`) **senza toccare la rete**: protegge **noi** (niente
+   thread/socket sprecati ad attendere un servizio morto) e **loro** (gli diamo respiro per riprendersi). Dopo
+   `BreakDuration` passa a *half-open* e prova una sonda. Tradeoff: troppo sensibile → si apre su un blip;
+   troppo lasco → non protegge. `MinimumThroughput` evita aperture su pochi campioni.
+4. **Timeout per-tentativo** (innermost) — taglia il **singolo** HTTP call lento, così il retry può subentrare
+   invece di restare appeso. Tradeoff come (1) ma per tentativo.
+
+> **Perché l'ordine.** Il retry deve stare **sopra** il circuit breaker (ogni tentativo conta nel breaker) e
+> **sotto** il timeout totale (i retry non possono sforare il budget complessivo). Il timeout per-tentativo è
+> il più interno perché deve agire sul singolo invio, non sull'intera pipeline.
+
+## Mappatura degli errori → 503
+
+Il client
+[`OpenLibraryPopularityClient`](../../src/WebApiPlayground.Infrastructure/Popularity/OpenLibraryPopularityClient.cs)
+**traduce** le eccezioni di trasporto/Polly (`BrokenCircuitException`, `TimeoutRejectedException`,
+`HttpRequestException`, risposta non-2xx esaurita, corpo non interpretabile) in
+[`ExternalServiceUnavailableException`](../../src/WebApiPlayground.Application/Popularity/ExternalServiceUnavailableException.cs)
+(Application) — così l'errore d'infrastruttura **non risale** oltre il suo layer (stesso principio della
+`ConcurrencyConflictException`, vedi [L17]).
+
+In Api,
+[`ExternalServiceUnavailableExceptionHandler`](../../src/WebApiPlayground.Api/ErrorHandling/ExternalServiceUnavailableExceptionHandler.cs)
+la mappa su **503** + header **`Retry-After`**, scrivendo via `IProblemDetailsService` così riusa
+`CustomizeProblemDetails`/`ProblemDetailsEnricher` e ottiene **`correlationId`/`traceId`** come ogni altro
+errore (DRY con gli handler 412/428/500). Registrato **tra** `PreconditionExceptionHandler` e
+`GlobalExceptionHandler` (la catena prova gli handler in ordine; il Global resta catch-all 500). Il `Detail` è
+generico: nessun dettaglio dell'upstream → niente info-leak.
+
+## Architettura (Clean Architecture, auto-validata)
+
+Stesso pattern della cache: **astrazione in Application, implementazione + resilienza in Infrastructure**.
+
+| Layer | Cosa vive qui |
+|-------|---------------|
+| **Application** | `IBookPopularityClient`, modello `BookPopularity`, `BookPopularityDto`, `ExternalServiceUnavailableException`, `BookPopularityService`. **Niente** package HTTP/Polly. |
+| **Infrastructure** | `OpenLibraryPopularityClient` (HttpClient tipizzato), contratto JSON `OpenLibrarySearchResponse`, `BookPopularityOptions`, registrazione della pipeline. |
+| **Api** | `BookPopularityController`, handler 503, transformer OpenAPI, config-gating. |
+
+Una **regola NetArchTest** (`Application_should_not_depend_on_resilience_implementations`) impedisce a `Polly` e
+`Microsoft.Extensions.Http` di trapelare in Application — come per `FusionCache`/`Redis` sulla cache.
+
+## Sicurezza
+
+- **No SSRF**: l'host è `BaseAddress`, **fisso da config**, mai input utente; titolo/autore finiscono solo come
+  query string **URL-encoded** (`Uri.EscapeDataString`), mai in host/schema/path.
+- **No secret**: Open Library è key-less → niente da esporre. (Con NYT, la key andrebbe in Key Vault, mai nel repo.)
+- **HTTPS only** (base address `https`).
+- **Resilienza = difesa di disponibilità**: timeout e circuit breaker limitano thread/socket/connection-pool
+  contro una dipendenza lenta/appesa — un vettore di esaurimento risorse, non solo un fastidio di latenza.
+- **No leak upstream**: errori esterni mappati a un 503 generico; il `Detail` esteso resta dev-only (global handler).
+- **Bound su memoria/payload**: `MaxResponseContentBufferSize` (1 MB) + `fields=` minimale nella query.
+
+## Configurazione (sezione `BookPopularity`)
+
+Config-gated/out-of-the-box come Cache/OTel: i default puntano a Open Library, **nessun segreto richiesto**.
+
+```json
+{ "BookPopularity": {
+    "BaseAddress": "https://openlibrary.org",
+    "Resilience": {
+      "AttemptTimeout": "00:00:03", "TotalTimeout": "00:00:10",
+      "Retry": { "MaxRetryAttempts": 3, "BaseDelay": "00:00:00.500" },
+      "CircuitBreaker": { "FailureRatio": 0.5, "SamplingDuration": "00:00:30", "MinimumThroughput": 10, "BreakDuration": "00:00:15" }
+} } }
+```
+
+Le opzioni si leggono **lazy** (post-build) via `IOptionsMonitor` dentro l'overload con `context` di
+`AddResilienceHandler`, così gli override di test/`WebApplicationFactory` valgono (vedi [L15]/[L19]).
+
+## Test
+
+| Livello | File | Cosa verifica |
+|---------|------|---------------|
+| Unit (service) | `tests/.../Tests/Popularity/BookPopularityServiceTests.cs` | composizione DB+esterno: 404 se libro assente (client non chiamato), mapping segnali, metriche null se nessun match, propagazione dell'eccezione di indisponibilità. |
+| Unit (pipeline) | `tests/.../Tests/Popularity/PopularityResiliencePipelineTests.cs` | la **pipeline reale** (registrazione di produzione) col primary handler stubbato: retry su transitorio, retry esaurito, **niente retry su 4xx**, timeout per-tentativo, timeout totale, **circuit breaker fail-fast** (il transport non viene colpito). |
+| Integration | `tests/.../IntegrationTests/Popularity/BookPopularityEndpointTests.cs` | endpoint end-to-end: 200 con segnali, 404, 401/403, **503 ProblemDetails** + `Retry-After` + `correlationId`/`traceId`. Lo stub esterno evita la rete reale (successo nella factory base, fallimento via `WithWebHostBuilder`). |
+| Integration | `tests/.../IntegrationTests/OpenApi/OpenApiContractTests.cs` | il path `popularity` e la **503 + Retry-After** sono documentati nello spec OpenAPI. |
+| Architecture | `tests/.../ArchitectureTests/LayerDependencyTests.cs` | resilienza confinata a Infrastructure (Application non dipende da Polly/Http). |
+
+## File chiave
+
+- `src/WebApiPlayground.Application/Popularity/` — `IBookPopularityClient`, `BookPopularity`, `ExternalServiceUnavailableException`
+- `src/WebApiPlayground.Application/Services/BookPopularityService.cs`, `DTOs/BookPopularityDto.cs`
+- `src/WebApiPlayground.Infrastructure/Popularity/` — client, contratto JSON, options, **registrazione pipeline**
+- `src/WebApiPlayground.Api/Controllers/BookPopularityController.cs`, `ErrorHandling/ExternalServiceUnavailableExceptionHandler.cs`, `OpenApi/ResilienceOperationTransformer.cs`
+
+Pitfall scoperti e soluzioni: `.claude/lessons.md` [L19].

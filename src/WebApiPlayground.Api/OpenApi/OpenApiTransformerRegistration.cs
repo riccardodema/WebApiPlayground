@@ -23,6 +23,8 @@ public static class OpenApiTransformerRegistration
         options.AddOperationTransformer<ConcurrencyOperationTransformer>();
         // Documenta il rate limiting (429 ProblemDetails + Retry-After).
         options.AddOperationTransformer<RateLimitingOperationTransformer>();
+        // Documenta la resilienza verso le dipendenze esterne (503 ProblemDetails + Retry-After) dove dichiarata.
+        options.AddOperationTransformer<ResilienceOperationTransformer>();
         // Documenta gli header di scoperta versioni (api-supported-versions / api-deprecated-versions).
         options.AddOperationTransformer<ApiVersioningOperationTransformer>();
         return options;

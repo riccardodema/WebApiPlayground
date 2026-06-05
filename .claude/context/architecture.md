@@ -21,6 +21,12 @@ Infrastructure
 > `Application` che referenziano EF Core / ASP.NET, oppure un layer inferiore che risale verso
 > l'API). Aggiungendo un nuovo layer o namespace, aggiornare gli anchor in `ArchitectureRules.cs`.
 
+**Dettagli tecnologici confinati (regole specifiche auto-validate):** oltre EF Core e ASP.NET,
+`Application` non deve dipendere dai **concreti della cache** (`FusionCache`/`Redis` — solo l'astrazione
+`HybridCache`, vedi `caching.md`) né dai concreti della **resilienza/HTTP** (`Polly`,
+`Microsoft.Extensions.Http(.Resilience)` — solo l'astrazione `IBookPopularityClient`, vedi `resilience.md`).
+HttpClient tipizzato e pipeline Polly vivono nella composition root (Infrastructure).
+
 ## Struttura cartelle
 
 ```

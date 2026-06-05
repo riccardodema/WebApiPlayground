@@ -100,6 +100,20 @@ public class LayerDependencyTests
         AssertArchitecture(result);
     }
 
+    [Fact]
+    public void Application_should_not_depend_on_resilience_implementations()
+    {
+        // Il service di popolarità usa solo l'astrazione IBookPopularityClient: Polly e
+        // Microsoft.Extensions.Http(.Resilience) — HttpClient tipizzato + pipeline retry/CB/timeout —
+        // sono dettagli di Infrastructure, non devono trapelare in Application.
+        var result = Types.InAssembly(ArchitectureRules.ApplicationAssembly)
+            .ShouldNot()
+            .HaveDependencyOnAny(ArchitectureRules.ResilienceImplementationNamespaces)
+            .GetResult();
+
+        AssertArchitecture(result);
+    }
+
     // ---- Infrastructure: Domain + Application, mai API ----------------------
 
     [Fact]

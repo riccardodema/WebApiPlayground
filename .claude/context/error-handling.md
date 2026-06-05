@@ -8,8 +8,21 @@ RFC 7807): un formato d'errore unico, machine-readable e correlabile ai log.
 | Cosa | Dove |
 |---|---|
 | Exception handler globale (eccezioni non gestite → 500) | `Api/ErrorHandling/GlobalExceptionHandler.cs` |
+| Precondizioni/concorrenza (412/428/400) | `Api/ErrorHandling/PreconditionExceptionHandler.cs` (vedi `[L17]`) |
+| Dipendenza esterna indisponibile (503 + `Retry-After`) | `Api/ErrorHandling/ExternalServiceUnavailableExceptionHandler.cs` (vedi `[L19]`) |
 | Registrazione `AddProblemDetails` + handler + enrichment | `Api/Extensions/ErrorHandlingExtensions.cs` (`AddApiProblemDetails`) |
 | Aggancio pipeline | `Program.cs`: `AddApiProblemDetails()` + `app.UseExceptionHandler()` |
+
+### Catena di `IExceptionHandler` (l'ordine di registrazione conta)
+
+Gli handler sono provati **in ordine** finché uno gestisce (gli altri ritornano `false` e declinano):
+
+1. **`PreconditionExceptionHandler`** → 412 (concorrenza stale) / 428 (If-Match mancante) / 400 (malformato).
+2. **`ExternalServiceUnavailableExceptionHandler`** → 503 + `Retry-After` quando la resilienza su una
+   dipendenza esterna è esaurita (`ExternalServiceUnavailableException`). Vedi `.claude/context/resilience.md`.
+3. **`GlobalExceptionHandler`** → catch-all 500 (sempre per ultimo).
+
+Tutti scrivono via `IProblemDetailsService` → stesso `correlationId`/`traceId` (DRY, `ProblemDetailsEnricher`).
 
 ## Come funziona
 

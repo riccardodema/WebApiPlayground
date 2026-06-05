@@ -123,6 +123,22 @@ public class OpenApiContractTests
         Assert.True(okHeaders.TryGetProperty("ETag", out _), "La 200 non documenta l'header di risposta 'ETag'.");
     }
 
+    [Fact]
+    public async Task OpenApi_DocumentsPopularityEndpoint_With503AndRetryAfter()
+    {
+        using var document = await GetOpenApiDocumentAsync("v1");
+
+        Assert.True(
+            document.RootElement.GetProperty("paths").TryGetProperty("/api/v1/books/{bookId}/popularity", out var path),
+            "Il documento v1 deve esporre la rotta /api/v1/books/{bookId}/popularity.");
+
+        var responses = path.GetProperty("get").GetProperty("responses");
+        Assert.True(responses.TryGetProperty("503", out var response),
+            "L'endpoint popularity deve documentare la risposta 503 (dipendenza esterna indisponibile).");
+        Assert.True(response.GetProperty("headers").TryGetProperty("Retry-After", out _),
+            "La 503 deve documentare l'header di risposta 'Retry-After'.");
+    }
+
     [Theory]
     [InlineData("put")]
     [InlineData("delete")]

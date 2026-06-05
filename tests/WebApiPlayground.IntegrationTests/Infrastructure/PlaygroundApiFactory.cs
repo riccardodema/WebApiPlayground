@@ -7,7 +7,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.MsSql;
 using WebApiPlayground.Application.Caching;
+using WebApiPlayground.Application.Popularity;
 using WebApiPlayground.Infrastructure.Persistence;
+using WebApiPlayground.Infrastructure.Popularity;
 using Xunit;
 
 namespace WebApiPlayground.IntegrationTests.Infrastructure;
@@ -47,6 +49,12 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
             services
                 .AddAuthentication(TestAuthHandler.SchemeName)
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
+
+            // Sostituisce il primary handler del client di popolarità con uno stub di successo: i test
+            // dell'endpoint non toccano la rete reale (Open Library). I test di indisponibilità installano
+            // via WithWebHostBuilder uno stub che fallisce sempre → 503. Vedi .claude/context/resilience.md.
+            services.AddHttpClient<IBookPopularityClient, OpenLibraryPopularityClient>()
+                .ConfigurePrimaryHttpMessageHandler(() => PopularityHttpStub.AlwaysOk());
         });
     }
 
