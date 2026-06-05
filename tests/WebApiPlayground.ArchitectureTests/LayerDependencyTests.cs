@@ -114,6 +114,20 @@ public class LayerDependencyTests
         AssertArchitecture(result);
     }
 
+    [Fact]
+    public void Application_should_not_depend_on_hosting_or_channels()
+    {
+        // Il processamento asincrono espone in Application solo l'astrazione IBackgroundTaskQueue<T> (primitive
+        // BCL). Il BackgroundService (Microsoft.Extensions.Hosting) e la coda su System.Threading.Channels sono
+        // il meccanismo, confinato a Infrastructure — non deve trapelare in Application.
+        var result = Types.InAssembly(ArchitectureRules.ApplicationAssembly)
+            .ShouldNot()
+            .HaveDependencyOnAny(ArchitectureRules.BackgroundProcessingImplementationNamespaces)
+            .GetResult();
+
+        AssertArchitecture(result);
+    }
+
     // ---- Infrastructure: Domain + Application, mai API ----------------------
 
     [Fact]

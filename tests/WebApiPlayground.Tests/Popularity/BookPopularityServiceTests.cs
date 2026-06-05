@@ -17,11 +17,12 @@ public class BookPopularityServiceTests
 {
     private readonly Mock<IBookRepository> _repository = new();
     private readonly Mock<IBookPopularityClient> _client = new();
+    private readonly Mock<IBookPopularitySnapshotRepository> _snapshots = new();
 
     public BookPopularityServiceTests() => _client.SetupGet(c => c.SourceName).Returns("Open Library");
 
     private BookPopularityService CreateSut() =>
-        new(_repository.Object, _client.Object, TimeProvider.System, NullLogger<BookPopularityService>.Instance);
+        new(_repository.Object, _client.Object, _snapshots.Object, TimeProvider.System, NullLogger<BookPopularityService>.Instance);
 
     private static Book SampleBook() => new()
     {
@@ -89,15 +90,52 @@ public class BookPopularityServiceTests
     }
 
     [Fact]
-    public async Task PropagatesUnavailableException_SoItMapsTo503()
+    public async Task PropagatesUnavailableException_WhenNoSnapshotFallback_SoItMapsTo503()
     {
         _repository.Setup(r => r.GetByIdAsync(7)).ReturnsAsync(SampleBook());
         _client
             .Setup(c => c.GetPopularityAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ExternalServiceUnavailableException("Open Library"));
+        // Nessuno snapshot durevole (default del mock = null) → niente fallback → si propaga → 503.
+        _snapshots.Setup(s => s.GetByBookIdAsync(7, It.IsAny<CancellationToken>())).ReturnsAsync((BookPopularitySnapshot?)null);
 
         await Assert.ThrowsAsync<ExternalServiceUnavailableException>(
             () => CreateSut().GetBookPopularityAsync(7, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ServesDurableSnapshot_WhenExternalUnavailable_AndSnapshotExists()
+    {
+        // Outage della dipendenza + snapshot durevole presente → 200 last-known-good (NON 503), con la
+        // freschezza/provenienza dello snapshot. È il valore aggiunto della persistenza durevole.
+        _repository.Setup(r => r.GetByIdAsync(7)).ReturnsAsync(SampleBook());
+        _client
+            .Setup(c => c.GetPopularityAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ExternalServiceUnavailableException("Open Library"));
+
+        var retrievedAt = DateTimeOffset.UtcNow.AddHours(-3);
+        _snapshots
+            .Setup(s => s.GetByBookIdAsync(7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BookPopularitySnapshot
+            {
+                BookId = 7,
+                AverageRating = 4.2,
+                RatingsCount = 99,
+                ReadingLogCount = 321,
+                Source = "Open Library (snapshot)",
+                RetrievedAt = retrievedAt,
+            });
+
+        var result = await CreateSut().GetBookPopularityAsync(7, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(7, result!.BookId);
+        Assert.Equal(4.2, result.AverageRating);
+        Assert.Equal(99, result.RatingsCount);
+        Assert.Equal(321, result.ReadingLogCount);
+        // Provenienza e as-of vengono dallo snapshot, non dal "now".
+        Assert.Equal("Open Library (snapshot)", result.Source);
+        Assert.Equal(retrievedAt, result.RetrievedAt);
     }
 
     [Fact]

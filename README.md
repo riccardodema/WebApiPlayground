@@ -249,6 +249,39 @@ resilience pipeline (`Microsoft.Extensions.Http.Resilience`).
 
 Details and the strategy trade-offs: [`.claude/context/resilience.md`](.claude/context/resilience.md).
 
+## Asynchronous processing / Background jobs
+
+Some work doesn't belong on the request thread. Calling **Open Library** to compute a book's popularity is slow
+and depends on a third party — making the *writer* of a book wait for it is wrong. So writes **enqueue** the work
+and return immediately; an in-process **`BackgroundService`** does it off the hot path. This is the classic
+**producer/consumer over `System.Threading.Channels`**, with **backpressure**.
+
+- **Event-driven, off the write path.** `POST/PUT /books` enqueues a `PopularityEnrichmentRequest` (best-effort,
+  non-blocking) onto a **bounded `Channel`**; the consumer calls the **existing** resilient+cached
+  `IBookPopularityClient` (which warms the `(title,author)` cache so the first read is hot) and **persists a
+  durable snapshot**. The write never blocks on Open Library.
+- **Reads stay fresh without a scheduler.** The read path is unchanged in the happy case — **cache → live on
+  miss** (no preemptive stale, no stale-while-revalidate). There is **no periodic refresh** (we don't hammer a
+  free third party across the whole catalog): a book read today has a long-expired cache entry → cache miss →
+  **fresh live fetch**, never the popularity from when it was inserted. The durable **snapshot** is consulted on a
+  read **only as an outage fallback** — when the dependency is down *and* the cache fail-safe is empty (e.g. cold
+  cache after a restart) — serving last-known-good instead of a `503`.
+- **A reusable worker that owns the pitfalls.** `BackgroundQueueWorker<T>` concentrates, in one tested place, the
+  three things that bite: **exception isolation** (an unhandled throw in `ExecuteAsync` stops the whole host in
+  .NET 6+ — here a poison item is logged/counted and the loop continues), a **DI scope per item** (no captive
+  `DbContext`), and **graceful shutdown**.
+- **Clean layering, enforced.** Only the abstraction `IBackgroundTaskQueue<T>` (pure BCL) lives in Application;
+  the `Channel` and the `BackgroundService` live in Infrastructure — a **NetArchTest rule** fails the build if
+  `Microsoft.Extensions.Hosting` or `System.Threading.Channels` ever leak into Application, like cache and resilience.
+- **Observable, correlated.** The processing span attaches to the originating request's trace (across the async
+  boundary), and `background.tasks.{enqueued,dropped,processed,failed}` counters surface the queue's behaviour.
+- **Honest about its limits → next step.** The queue is in-memory and the enqueue isn't transactional with the DB
+  write: items in the queue are lost on a crash and a full queue drops (**at-most-once**). That's acceptable here
+  (normal reads are fresh; the snapshot is only an outage fallback) — and it's exactly what the **Outbox pattern +
+  Azure Service Bus** (Tier 4, step 2) will fix, reusing the same worker and queue abstraction.
+
+Details: [`.claude/context/background-processing.md`](.claude/context/background-processing.md).
+
 ## Database as code
 
 The schema is **versioned in the solution** as a SQL Database Project

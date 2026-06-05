@@ -14,21 +14,25 @@ public class BookPopularityService : IBookPopularityService
 {
     private readonly IBookRepository _repository;
     private readonly IBookPopularityClient _popularityClient;
+    private readonly IBookPopularitySnapshotRepository _snapshots;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<BookPopularityService> _logger;
 
     public BookPopularityService(
         IBookRepository repository,
         IBookPopularityClient popularityClient,
+        IBookPopularitySnapshotRepository snapshots,
         TimeProvider timeProvider,
         ILogger<BookPopularityService> logger)
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(popularityClient);
+        ArgumentNullException.ThrowIfNull(snapshots);
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(logger);
         _repository = repository;
         _popularityClient = popularityClient;
+        _snapshots = snapshots;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -46,14 +50,46 @@ public class BookPopularityService : IBookPopularityService
 
         var author = book.Author?.FullName;
 
-        // Una sola chiamata esterna, avvolta dalla resilienza nel client. Un esaurimento si propaga come
-        // ExternalServiceUnavailableException (→ 503): non lo catturiamo qui per non mascherare il guasto.
-        var popularity = await _popularityClient.GetPopularityAsync(book.Title, author, cancellationToken);
+        // Percorso felice: cache → live (il client governa resilienza e cache). Niente snapshot qui: il read
+        // normale serve sempre il valore fresco/cachato.
+        BookPopularity? popularity;
+        string source;
+        DateTimeOffset retrievedAt;
 
-        if (popularity is null)
-            _logger.LogInformation(
-                "No popularity match for book {BookId} ('{BookTitle}') in {Source}",
-                bookId, book.Title, _popularityClient.SourceName);
+        try
+        {
+            popularity = await _popularityClient.GetPopularityAsync(book.Title, author, cancellationToken);
+            source = _popularityClient.SourceName;
+            retrievedAt = _timeProvider.GetUtcNow();
+
+            if (popularity is null)
+                _logger.LogInformation(
+                    "No popularity match for book {BookId} ('{BookTitle}') in {Source}",
+                    bookId, book.Title, source);
+        }
+        catch (ExternalServiceUnavailableException)
+        {
+            // Outage E fail-safe della cache vuoto (es. cache fredda dopo un restart): invece del 503,
+            // serviamo l'ultimo snapshot durevole (last-known-good) con la SUA freschezza/provenienza.
+            // (Niente await in un filtro catch → lookup qui dentro con rethrow se non c'è fallback.)
+            var snapshot = await _snapshots.GetByBookIdAsync(bookId, cancellationToken);
+            if (snapshot is null)
+                throw; // nessuno snapshot → si propaga → 503
+
+            _logger.LogWarning(
+                "{Source} unavailable — serving durable snapshot for book {BookId} (retrieved {RetrievedAt:o})",
+                _popularityClient.SourceName, bookId, snapshot.RetrievedAt);
+
+            popularity = new BookPopularity(
+                snapshot.AverageRating,
+                snapshot.RatingsCount,
+                snapshot.WantToReadCount,
+                snapshot.CurrentlyReadingCount,
+                snapshot.AlreadyReadCount,
+                snapshot.ReadingLogCount);
+            source = snapshot.Source;
+            retrievedAt = snapshot.RetrievedAt;
+        }
 
         return new BookPopularityDto(
             book.Id,
@@ -65,7 +101,7 @@ public class BookPopularityService : IBookPopularityService
             popularity?.CurrentlyReadingCount,
             popularity?.AlreadyReadCount,
             popularity?.ReadingLogCount,
-            _popularityClient.SourceName,
-            _timeProvider.GetUtcNow());
+            source,
+            retrievedAt);
     }
 }
