@@ -83,6 +83,36 @@ Stesso pattern della cache: **astrazione in Application, implementazione + resil
 Una **regola NetArchTest** (`Application_should_not_depend_on_resilience_implementations`) impedisce a `Polly` e
 `Microsoft.Extensions.Http` di trapelare in Application — come per `FusionCache`/`Redis` sulla cache.
 
+## Caching della chiamata esterna (degrade-to-stale)
+
+La risposta di Open Library è **cachata**: è il candidato ideale (latenza di rete, cortesia verso un servizio
+gratuito/condiviso, dato che cambia a giorni) e **la cache diventa un pattern di resilienza**. Decoratore
+[`CachingBookPopularityClient`](../../src/WebApiPlayground.Infrastructure/Popularity/CachingBookPopularityClient.cs)
+su `IBookPopularityClient`: `cache → [miss] → pipeline Polly → HttpClient → Open Library`.
+
+- **Hit** = niente rete né circuit breaker (le hit non consumano la throughput del breaker → statistiche più
+  oneste). **Miss** = chiamata resiliente single-flight (**stampede protection**: un burst sullo stesso libro
+  → *una* sola chiamata in uscita).
+- **Degrade-to-stale**: con il **fail-safe** abilitato, se Open Library è giù (circuito aperto / esaurito) e
+  l'entry è scaduta ma entro `FailSafeMaxDuration` (24h), si serve l'ultimo valore buono invece del 503 →
+  un'outage con cache calda è invisibile all'utente. Il **503 resta** per cache fredda + dipendenza giù.
+- **Negative caching**: anche il "no match" viene cachato (presenza su OL stabile) → niente ri-chieste.
+
+> **Perché `IFusionCache` (Infrastructure) e non l'astrazione `HybridCache` (come `CachingBooksService`).**
+> Non è stilistico. `HybridCacheEntryOptions` espone **solo** `Expiration`/`LocalCacheExpiration`; NON il
+> **factory timeout** né il **fail-safe**, che sono concetti *di FusionCache*. Ci servono entrambi:
+> - **factory timeout INFINITI** — altrimenti il `FactoryHardTimeout = 2s` globale (giusto per le factory
+>   veloci dei books) **aborterebbe la chiamata esterna a 2s su una miss fredda, neutralizzando la pipeline di
+>   resilienza** (3s/10s). Per la popolarità il budget di timeout lo governa la pipeline, non la cache.
+> - **fail-safe esteso (24h)** per il degrade-to-stale.
+>
+> Quelle manopole si passano solo via `FusionCacheEntryOptions` → `IFusionCache` (concreto) → che per regola
+> NetArchTest vive solo in Infrastructure. "Due `HybridCache` con parametri diversi" non basta: quei parametri
+> non sono parametri di `HybridCache`. L'astrazione che conta resta pulita (Application vede solo
+> `IBookPopularityClient`); il decoratore wrappa il **client concreto** registrato come typed client. È
+> l'asimmetria didattica: cache di un *use case veloce in-process* vs cache di una *dipendenza esterna lenta
+> dietro resilienza*. Pitfall e dettagli in [L20].
+
 ## Sicurezza
 
 - **No SSRF**: l'host è `BaseAddress`, **fisso da config**, mai input utente; titolo/autore finiscono solo come
@@ -105,8 +135,16 @@ Config-gated/out-of-the-box come Cache/OTel: i default puntano a Open Library, *
       "AttemptTimeout": "00:00:03", "TotalTimeout": "00:00:10",
       "Retry": { "MaxRetryAttempts": 3, "BaseDelay": "00:00:00.500" },
       "CircuitBreaker": { "FailureRatio": 0.5, "SamplingDuration": "00:00:30", "MinimumThroughput": 10, "BreakDuration": "00:00:15" }
+    },
+    "Cache": {
+      "Enabled": true,
+      "Duration": "00:15:00",
+      "FailSafeMaxDuration": "24:00:00",
+      "CacheNotFound": true
 } } }
 ```
+`Cache.Duration` = TTL di freschezza (15 min); `FailSafeMaxDuration` = finestra di degrade-to-stale (24h);
+`CacheNotFound` = negative caching; `Enabled=false` = niente cache (ogni richiesta passa per la pipeline).
 
 Le opzioni si leggono **lazy** (post-build) via `IOptionsMonitor` dentro l'overload con `context` di
 `AddResilienceHandler`, così gli override di test/`WebApplicationFactory` valgono (vedi [L15]/[L19]).
@@ -116,8 +154,9 @@ Le opzioni si leggono **lazy** (post-build) via `IOptionsMonitor` dentro l'overl
 | Livello | File | Cosa verifica |
 |---------|------|---------------|
 | Unit (service) | `tests/.../Tests/Popularity/BookPopularityServiceTests.cs` | composizione DB+esterno: 404 se libro assente (client non chiamato), mapping segnali, metriche null se nessun match, propagazione dell'eccezione di indisponibilità. |
-| Unit (pipeline) | `tests/.../Tests/Popularity/PopularityResiliencePipelineTests.cs` | la **pipeline reale** (registrazione di produzione) col primary handler stubbato: retry su transitorio, retry esaurito, **niente retry su 4xx**, timeout per-tentativo, timeout totale, **circuit breaker fail-fast** (il transport non viene colpito). |
-| Integration | `tests/.../IntegrationTests/Popularity/BookPopularityEndpointTests.cs` | endpoint end-to-end: 200 con segnali, 404, 401/403, **503 ProblemDetails** + `Retry-After` + `correlationId`/`traceId`. Lo stub esterno evita la rete reale (successo nella factory base, fallimento via `WithWebHostBuilder`). |
+| Unit (pipeline) | `tests/.../Tests/Popularity/PopularityResiliencePipelineTests.cs` | la **pipeline reale** (risolve il client **concreto** per bypassare la cache) col primary handler stubbato: retry su transitorio, retry esaurito, **niente retry su 4xx**, timeout per-tentativo, timeout totale, **circuit breaker fail-fast** (il transport non viene colpito). |
+| Unit (cache) | `tests/.../Tests/Popularity/CachingBookPopularityClientTests.cs` | il decoratore con `IFusionCache` reale + inner mockato: hit, **normalizzazione chiave**, negative caching on/off, bypass se disabilitato, e **degrade-to-stale** (l'inner fallisce dopo la scadenza → il fail-safe serve lo stale). |
+| Integration | `tests/.../IntegrationTests/Popularity/BookPopularityEndpointTests.cs` | endpoint end-to-end: 200 con segnali, 404, 401/403, **503 ProblemDetails** + `Retry-After` + `correlationId`/`traceId`, e **la cache riduce le chiamate in uscita** (due GET → 1 sola chiamata allo stub). Lo stub esterno evita la rete reale (successo nella factory base, fallimento via `WithWebHostBuilder`). |
 | Integration | `tests/.../IntegrationTests/OpenApi/OpenApiContractTests.cs` | il path `popularity` e la **503 + Retry-After** sono documentati nello spec OpenAPI. |
 | Architecture | `tests/.../ArchitectureTests/LayerDependencyTests.cs` | resilienza confinata a Infrastructure (Application non dipende da Polly/Http). |
 
@@ -125,7 +164,7 @@ Le opzioni si leggono **lazy** (post-build) via `IOptionsMonitor` dentro l'overl
 
 - `src/WebApiPlayground.Application/Popularity/` — `IBookPopularityClient`, `BookPopularity`, `ExternalServiceUnavailableException`
 - `src/WebApiPlayground.Application/Services/BookPopularityService.cs`, `DTOs/BookPopularityDto.cs`
-- `src/WebApiPlayground.Infrastructure/Popularity/` — client, contratto JSON, options, **registrazione pipeline**
+- `src/WebApiPlayground.Infrastructure/Popularity/` — client, contratto JSON, options, **registrazione pipeline**, **`CachingBookPopularityClient`** + `PopularityCacheKeys`
 - `src/WebApiPlayground.Api/Controllers/BookPopularityController.cs`, `ErrorHandling/ExternalServiceUnavailableExceptionHandler.cs`, `OpenApi/ResilienceOperationTransformer.cs`
 
 Pitfall scoperti e soluzioni: `.claude/lessons.md` [L19].

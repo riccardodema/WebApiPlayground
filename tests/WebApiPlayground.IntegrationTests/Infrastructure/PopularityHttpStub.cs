@@ -16,8 +16,13 @@ public sealed class PopularityHttpStub : HttpMessageHandler
         """{"docs":[{"ratings_average":4.5,"ratings_count":10,"want_to_read_count":100,"currently_reading_count":5,"already_read_count":50,"readinglog_count":155}]}""";
 
     private readonly HttpStatusCode _status;
+    private int _invocations;
 
     private PopularityHttpStub(HttpStatusCode status) => _status = status;
+
+    /// <summary>Quante volte il transport è stato realmente colpito: una hit di cache NON lo incrementa,
+    /// così un test può provare che la cache riduce le chiamate in uscita.</summary>
+    public int Invocations => Volatile.Read(ref _invocations);
 
     /// <summary>Stub che risponde 200 con un match (happy path).</summary>
     public static PopularityHttpStub AlwaysOk() => new(HttpStatusCode.OK);
@@ -27,6 +32,7 @@ public sealed class PopularityHttpStub : HttpMessageHandler
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        Interlocked.Increment(ref _invocations);
         var response = new HttpResponseMessage(_status)
         {
             Content = new StringContent(_status == HttpStatusCode.OK ? MatchJson : "{}", Encoding.UTF8, "application/json"),

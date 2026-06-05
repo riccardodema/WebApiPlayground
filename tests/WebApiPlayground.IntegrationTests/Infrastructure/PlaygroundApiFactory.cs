@@ -11,6 +11,7 @@ using WebApiPlayground.Application.Popularity;
 using WebApiPlayground.Infrastructure.Persistence;
 using WebApiPlayground.Infrastructure.Popularity;
 using Xunit;
+using ZiggyCreatures.Caching.Fusion;
 
 namespace WebApiPlayground.IntegrationTests.Infrastructure;
 
@@ -50,10 +51,10 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
                 .AddAuthentication(TestAuthHandler.SchemeName)
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
 
-            // Sostituisce il primary handler del client di popolarità con uno stub di successo: i test
-            // dell'endpoint non toccano la rete reale (Open Library). I test di indisponibilità installano
-            // via WithWebHostBuilder uno stub che fallisce sempre → 503. Vedi .claude/context/resilience.md.
-            services.AddHttpClient<IBookPopularityClient, OpenLibraryPopularityClient>()
+            // Sostituisce il primary handler del client di popolarità (CONCRETO; l'astrazione è il decoratore
+            // di caching) con uno stub di successo: i test dell'endpoint non toccano la rete reale (Open Library).
+            // I test di indisponibilità installano via WithWebHostBuilder uno stub che fallisce sempre → 503.
+            services.AddHttpClient<OpenLibraryPopularityClient>()
                 .ConfigurePrimaryHttpMessageHandler(() => PopularityHttpStub.AlwaysOk());
         });
     }
@@ -104,5 +105,10 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         // Vedi .claude/lessons.md [L11].
         var cache = scope.ServiceProvider.GetRequiredService<HybridCache>();
         await cache.RemoveByTagAsync(BookCacheKeys.Books);
+
+        // Stesso motivo per la cache di popolarità (tag dedicato, backing FusionCache): va svuotata col DB,
+        // altrimenti una risposta cache-ata in un test trapela nel successivo. Vedi [L11]/[L20].
+        var fusionCache = scope.ServiceProvider.GetRequiredService<IFusionCache>();
+        await fusionCache.RemoveByTagAsync(PopularityCacheKeys.Tag);
     }
 }

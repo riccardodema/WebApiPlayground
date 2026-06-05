@@ -7,7 +7,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using WebApiPlayground.Api.Authorization;
 using WebApiPlayground.Application.DTOs;
-using WebApiPlayground.Application.Popularity;
 using WebApiPlayground.Domain.Entities;
 using WebApiPlayground.Infrastructure.Persistence;
 using WebApiPlayground.Infrastructure.Popularity;
@@ -46,7 +45,7 @@ public class BookPopularityEndpointTests : IAsyncLifetime
                 ["BookPopularity:Resilience:AttemptTimeout"] = "00:00:02",
             }));
             builder.ConfigureServices(services =>
-                services.AddHttpClient<IBookPopularityClient, OpenLibraryPopularityClient>()
+                services.AddHttpClient<OpenLibraryPopularityClient>()
                     .ConfigurePrimaryHttpMessageHandler(() => PopularityHttpStub.Always(HttpStatusCode.ServiceUnavailable)));
         });
     }
@@ -118,6 +117,30 @@ public class BookPopularityEndpointTests : IAsyncLifetime
         var response = await client.GetAsync("/api/v1/books/1/popularity");
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Caching_ReducesUpstreamCalls_ForRepeatedRequests()
+    {
+        var bookId = await SeedBookAsync();
+
+        // Host dedicato con uno stub di cui tratteniamo il riferimento (per leggere il contatore) e cache
+        // fredda (FusionCache per-host): la 1ª GET è una miss (1 chiamata a OL), la 2ª una hit (0 chiamate).
+        var stub = PopularityHttpStub.AlwaysOk();
+        using var cachingFactory = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+                services.AddHttpClient<OpenLibraryPopularityClient>()
+                    .ConfigurePrimaryHttpMessageHandler(() => stub)));
+
+        var client = cachingFactory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.ScopeHeader, BooksPermissions.ScopeRead);
+
+        var first = await client.GetAsync($"/api/v1/books/{bookId}/popularity");
+        var second = await client.GetAsync($"/api/v1/books/{bookId}/popularity");
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        Assert.Equal(1, stub.Invocations); // la 2ª risposta è servita dalla cache → niente nuova chiamata a OL
     }
 
     [Fact]

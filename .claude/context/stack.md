@@ -112,7 +112,9 @@ si esportano traces + metrics + logs via OTLP. `ConsoleExporter=true` stampa tra
 
 Config-gated/out-of-the-box come la cache: `BaseAddress` punta a Open Library (key-less → nessun segreto, host
 fisso → niente SSRF). `Resilience` configura la pipeline Polly esplicita (timeout totale → retry backoff+jitter
-→ circuit breaker → timeout per-tentativo). Vedi `.claude/context/resilience.md`.
+→ circuit breaker → timeout per-tentativo). `Cache` configura la cache della risposta esterna (FusionCache via
+`IFusionCache`): `Duration` = TTL freschezza, `FailSafeMaxDuration` = finestra di degrade-to-stale durante
+un'outage, `CacheNotFound` = negative caching, `Enabled=false` = nessuna cache. Vedi `.claude/context/resilience.md`.
 
 ```json
 { "BookPopularity": {
@@ -121,5 +123,7 @@ fisso → niente SSRF). `Resilience` configura la pipeline Polly esplicita (time
       "AttemptTimeout": "00:00:03", "TotalTimeout": "00:00:10",
       "Retry": { "MaxRetryAttempts": 3, "BaseDelay": "00:00:00.500" },
       "CircuitBreaker": { "FailureRatio": 0.5, "SamplingDuration": "00:00:30", "MinimumThroughput": 10, "BreakDuration": "00:00:15" }
+    },
+    "Cache": { "Enabled": true, "Duration": "00:15:00", "FailSafeMaxDuration": "24:00:00", "CacheNotFound": true }
 } } }
 ```

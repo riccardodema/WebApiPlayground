@@ -423,6 +423,47 @@ il bridge in `Program.cs` e i test in `tests/.../Observability/` + `Tests/Diagno
 
 ---
 
+## [L20] Cachare una chiamata esterna: i factory timeout della cache preemptano la pipeline di resilienza
+
+**Contesto:** cache della risposta di Open Library (popolarità) davanti alla pipeline di resilienza. Dettagli
+in `.claude/context/resilience.md` (sez. *Caching della chiamata esterna*).
+
+**Errori e cause:**
+- **`FactoryHardTimeout` globale (2s) abortisce la chiamata esterna su una miss fredda.** Le
+  `DefaultEntryOptions` di FusionCache sono tarate sui books (factory DB veloce): `FactorySoftTimeout=100ms`,
+  `FactoryHardTimeout=2s`. Riusarle per la popolarità farebbe scattare il hard timeout **a 2s**, *prima* che la
+  pipeline di resilienza (3s attempt / 10s total) faccia i suoi retry → resilienza **silenziosamente
+  neutralizzata** su ogni miss fredda. → Per la popolarità servono entry options con **factory timeout
+  infiniti** (`FactorySoftTimeout = FactoryHardTimeout = Timeout.InfiniteTimeSpan`): il budget di timeout lo
+  governa la pipeline, non la cache.
+- **L'astrazione `HybridCache` non basta → la cache va in Infrastructure.** `HybridCacheEntryOptions` espone
+  **solo** `Expiration`/`LocalCacheExpiration`: NON i factory timeout né il fail-safe (concetti *di
+  FusionCache*). Per passarli serve `IFusionCache` (concreto) → che per regola NetArchTest vive solo in
+  Infrastructure. Quindi, a differenza di `CachingBooksService` (Application, HybridCache), il decoratore
+  `CachingBookPopularityClient` sta in **Infrastructure**. "Due HybridCache con parametri diversi" non
+  risolve: quei parametri non sono parametri di HybridCache. L'astrazione che conta resta pulita (Application
+  vede solo `IBookPopularityClient`); il decoratore wrappa il **client concreto** (typed client).
+- **Fail-safe = degrade-to-stale (cache come resilienza).** Con `IsFailSafeEnabled=true` +
+  `FailSafeMaxDuration` lunga, se la factory (chiamata resiliente) **lancia** e l'entry è scaduta ma entro la
+  finestra, FusionCache serve l'ultimo valore buono invece di propagare il 503. Il 503 resta solo per **cache
+  fredda + dipendenza giù**. Conseguenza sui test: il test del 503 deve girare su cache **fredda** (host
+  separato via `WithWebHostBuilder` = FusionCache nuova).
+- **Negative caching senza cachare il null.** Per *non* scrivere il "no match" mantenendo il single-flight, nel
+  factory: `ctx.Options.SkipMemoryCacheWrite = true; ctx.Options.SkipDistributedCacheWrite = true;` (FusionCache
+  adaptive caching). Con caching ON il null si cacha normalmente (GetOrSet cacha anche null).
+- **Decorare = i test della pipeline devono risolvere il CONCRETO.** Resa `IBookPopularityClient` = decoratore
+  di cache, i test della sola resilienza vanno fatti risolvendo `OpenLibraryPopularityClient` (concreto, senza
+  cache); l'override del primary handler diventa `AddHttpClient<OpenLibraryPopularityClient>()`. Mirror di come
+  i books-test userebbero il `BooksService` concreto, non il decoratore.
+- **Flush del tag anche per la popolarità** ([L11] esteso): nel reset della factory di test, oltre al tag
+  `books`, svuotare `IFusionCache.RemoveByTagAsync("popularity")` — la cache è condivisa nella collection.
+
+**Soluzione:** vedi `Infrastructure/Popularity/CachingBookPopularityClient.cs` (entry options + fail-safe),
+`PopularityCacheKeys.cs`, la registrazione in `BookPopularityRegistration.cs` e i test in
+`tests/.../Popularity/CachingBookPopularityClientTests.cs`.
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

@@ -78,7 +78,10 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
   `GET /api/v1/books/{id}/popularity` (proxy gratuito di domanda: rating + reading-log; i dati di vendita
   reali non sono pubblici). Esaurimento → **503 ProblemDetails** + `Retry-After` (handler dedicato nella
   catena, stesso `correlationId`/`traceId`). Astrazione `IBookPopularityClient` in Application, resilienza
-  in Infrastructure (regola NetArchTest che lo enforce). Vedi `.claude/context/resilience.md`, `[L19]`.
+  in Infrastructure (regola NetArchTest che lo enforce). La chiamata esterna è anche **cachata** (FusionCache
+  via `IFusionCache`, factory timeout infiniti = il budget lo governa la pipeline) con **degrade-to-stale**
+  (fail-safe → stale-200 invece di 503 durante un'outage) e stampede protection. Vedi
+  `.claude/context/resilience.md`, `[L19]`, `[L20]`.
 
 ## Tier 4 — Asincronia / messaging (capstone)
 
