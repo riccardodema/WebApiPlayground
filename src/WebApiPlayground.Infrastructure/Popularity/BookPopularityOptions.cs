@@ -15,6 +15,32 @@ public sealed class BookPopularityOptions
 
     public ResilienceSettings Resilience { get; set; } = new();
 
+    public CacheSettings Cache { get; set; } = new();
+
+    /// <summary>
+    /// Cache della risposta esterna. NB: la popolarità si muove lentamente (giorni) ed è il candidato
+    /// ideale alla cache. Si usa <c>IFusionCache</c> (non l'astrazione <c>HybridCache</c>) perché servono
+    /// entry options che l'astrazione non espone: <b>factory timeout infiniti</b> (così il budget di timeout
+    /// lo governa la pipeline di resilienza, non il <c>FactoryHardTimeout=2s</c> globale tarato sui books) e
+    /// <b>fail-safe</b> esteso (degrade-to-stale durante un'outage). Vedi <c>.claude/context/resilience.md</c>.
+    /// </summary>
+    public sealed class CacheSettings
+    {
+        /// <summary>Master switch: <c>false</c> = nessuna cache, ogni richiesta passa per la pipeline (config-gated).</summary>
+        public bool Enabled { get; set; } = true;
+
+        /// <summary>TTL di freschezza: per quanto un'entry è "fresca" prima di rinfrescarla.</summary>
+        public TimeSpan Duration { get; set; } = TimeSpan.FromMinutes(15);
+
+        /// <summary>Finestra di <b>degrade-to-stale</b>: con Open Library giù e l'entry scaduta, per quanto
+        /// si serve l'ultimo valore buono invece di propagare il 503.</summary>
+        public TimeSpan FailSafeMaxDuration { get; set; } = TimeSpan.FromHours(24);
+
+        /// <summary>Negative caching: se <c>true</c>, anche il "no match" upstream viene cachato (risparmia
+        /// chiamate per libri che Open Library non conosce, presenza stabile nel tempo).</summary>
+        public bool CacheNotFound { get; set; } = true;
+    }
+
     public sealed class ResilienceSettings
     {
         /// <summary>Timeout del <b>singolo tentativo</b> (innermost): taglia una richiesta lenta prima del retry.</summary>

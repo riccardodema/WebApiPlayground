@@ -1,9 +1,11 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly;
 using WebApiPlayground.Application.Popularity;
+using ZiggyCreatures.Caching.Fusion;
 
 namespace WebApiPlayground.Infrastructure.Popularity;
 
@@ -22,7 +24,10 @@ public static class BookPopularityRegistration
     {
         services.Configure<BookPopularityOptions>(configuration.GetSection(BookPopularityOptions.SectionName));
 
-        services.AddHttpClient<IBookPopularityClient, OpenLibraryPopularityClient>((serviceProvider, httpClient) =>
+        // Typed client CONCRETO (OpenLibraryPopularityClient): è il client resiliente "nudo". L'astrazione
+        // IBookPopularityClient è poi il decoratore di caching che lo avvolge (sotto). Stesso schema di
+        // BooksService (concreto) decorato da CachingBooksService. Vedi Application/DependencyInjection.cs.
+        services.AddHttpClient<OpenLibraryPopularityClient>((serviceProvider, httpClient) =>
             {
                 var options = serviceProvider.GetRequiredService<IOptionsMonitor<BookPopularityOptions>>().CurrentValue;
 
@@ -72,6 +77,15 @@ public static class BookPopularityRegistration
                     })
                     .AddTimeout(resilience.AttemptTimeout);
             });
+
+        // L'astrazione vista dal resto dell'app è il DECORATORE di caching, che avvolge il client resiliente
+        // concreto. Il gate Enabled è lazy dentro il decoratore (legge IOptionsMonitor a ogni richiesta), così
+        // gli override di test valgono e si può spegnere la cache da config senza ricompilare.
+        services.AddScoped<IBookPopularityClient>(serviceProvider => new CachingBookPopularityClient(
+            serviceProvider.GetRequiredService<OpenLibraryPopularityClient>(),
+            serviceProvider.GetRequiredService<IFusionCache>(),
+            serviceProvider.GetRequiredService<IOptionsMonitor<BookPopularityOptions>>(),
+            serviceProvider.GetRequiredService<ILogger<CachingBookPopularityClient>>()));
 
         return services;
     }

@@ -32,7 +32,7 @@ public class PopularityResiliencePipelineTests
         ["BookPopularity:Resilience:CircuitBreaker:BreakDuration"] = "00:00:10",
     };
 
-    private static IBookPopularityClient BuildClient(
+    private static OpenLibraryPopularityClient BuildClient(
         StubHttpMessageHandler handler, Action<Dictionary<string, string?>>? tweak = null)
     {
         var dict = BaseConfig();
@@ -43,10 +43,12 @@ public class PopularityResiliencePipelineTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddBookPopularityClient(configuration); // registrazione REALE (pipeline inclusa)
-        services.AddHttpClient<IBookPopularityClient, OpenLibraryPopularityClient>()
+        services.AddHttpClient<OpenLibraryPopularityClient>()
             .ConfigurePrimaryHttpMessageHandler(() => handler); // ultimo wins → intercetta la rete
 
-        return services.BuildServiceProvider().GetRequiredService<IBookPopularityClient>();
+        // Risolve il client CONCRETO (resiliente, senza cache): qui si testa solo la pipeline. Il decoratore
+        // di caching (IBookPopularityClient) è testato a parte in CachingBookPopularityClientTests.
+        return services.BuildServiceProvider().GetRequiredService<OpenLibraryPopularityClient>();
     }
 
     [Fact]

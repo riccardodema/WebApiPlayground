@@ -113,6 +113,26 @@ Avviare davvero Redis (docker-compose) è un passo separato della roadmap (Tier 
 
 ---
 
+## 4. Cache di una dipendenza esterna (popolarità) — caso diverso
+
+C'è un **secondo consumer** della stessa FusionCache: la risposta esterna di Open Library
+(`GET /books/{id}/popularity`), cachata dal decoratore
+[`CachingBookPopularityClient`](../../src/WebApiPlayground.Infrastructure/Popularity/CachingBookPopularityClient.cs).
+Ma con due differenze sostanziali rispetto al caching dei books — ed è il punto interessante:
+
+- **Usa `IFusionCache` (concreto), non l'astrazione `HybridCache`**, e quindi sta in **Infrastructure** (non
+  in Application). Motivo: servono entry options che `HybridCacheEntryOptions` non espone — **factory timeout
+  infiniti** (altrimenti il `FactoryHardTimeout=2s` globale, giusto per la factory DB veloce, abortirebbe la
+  chiamata esterna su una miss fredda **neutralizzando la pipeline di resilienza** 3s/10s) e un **fail-safe**
+  dedicato (24h).
+- **Fail-safe = degrade-to-stale**: con Open Library giù e l'entry scaduta (entro la finestra) si serve l'ultimo
+  valore buono invece del 503 → la cache diventa un **pattern di resilienza**.
+- **Niente invalidazione a evento**: è dato esterno (non lo scriviamo noi) → solo TTL + fail-safe, nessun
+  `RemoveByTagAsync` su write (a differenza dei books). Tag `popularity` solo per il flush nei test.
+
+Dettagli, tradeoff e l'asimmetria con `CachingBooksService` in `.claude/context/resilience.md` (sez. *Caching
+della chiamata esterna*) e `.claude/lessons.md` **[L20]**.
+
 ## Vincoli architetturali (auto-validati)
 
 - Application dipende **solo** dall'astrazione `HybridCache`, mai dai concreti FusionCache/Redis:
@@ -136,4 +156,7 @@ dell'idempotency (`.claude/context/idempotency.md`).
 - **Integration** ([`tests/WebApiPlayground.IntegrationTests/Caching`](../../tests/WebApiPlayground.IntegrationTests/Caching)):
   GET → ETag/Cache-Control; `If-None-Match` → `304` senza body; dopo PUT l'ETag cambia.
 - ⚠️ I test che fanno seed **diretto** sul DB devono svuotare la cache nel reset del factory — vedi
-  `.claude/lessons.md` **[L11]**.
+  `.claude/lessons.md` **[L11]** (e **[L20]** per il flush del tag `popularity`).
+- **Cache esterna**: unit del decoratore di popolarità (hit, normalizzazione chiave, negative caching,
+  **degrade-to-stale**) in `tests/WebApiPlayground.Tests/Popularity/CachingBookPopularityClientTests.cs`;
+  e2e "la cache riduce le chiamate in uscita" in `.../IntegrationTests/Popularity/BookPopularityEndpointTests.cs`.

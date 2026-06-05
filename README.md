@@ -233,6 +233,13 @@ resilience pipeline (`Microsoft.Extensions.Http.Resilience`).
   Infrastructure) and mapped to **`503 Service Unavailable`** as RFC 7807 ProblemDetails with a **`Retry-After`**
   header and the same `correlationId`/`traceId` as every other error — and the `503` is **documented in the
   OpenAPI contract**, not implicit.
+- **Cached, with degrade-to-stale.** The external response is cached (it's slow-moving, and the dependency is a
+  free shared service): a hit skips the network *and* the breaker, a burst collapses to a single upstream call
+  (stampede protection), and — the synergy — when Open Library is **down**, **fail-safe** serves the last good
+  value instead of a 503. This needs cache options the `HybridCache` abstraction can't express (infinite factory
+  timeouts so the resilience pipeline owns the timeout budget, not the 2s tuned for fast DB calls; an extended
+  fail-safe window), so the popularity cache uses `IFusionCache` in Infrastructure — a conscious asymmetry vs the
+  in-process `HybridCache` book cache.
 - **Clean layering, enforced.** Only the abstraction `IBookPopularityClient` lives in Application; the typed
   `HttpClient` and the Polly pipeline live in Infrastructure — a **NetArchTest rule** fails the build if Polly or
   `Microsoft.Extensions.Http` ever leak upward, exactly like the cache abstraction.
