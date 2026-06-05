@@ -66,7 +66,12 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
 
 ## Tier 3 — Observability distribuita
 
-- ⬜ **OpenTelemetry**: traces + metrics (export OTLP), correlati alla storia CorrelationId/Serilog.
+- ✅ **OpenTelemetry**: traces + metrics + logs via **OTLP** (export config-gated come Cache/Redis).
+  Auto-instrumentation ASP.NET Core/HttpClient/EF Core/runtime + **source/meter custom** (`ActivitySource`/
+  `Meter` con primitive BCL in Application, SDK solo in Api → arch-test-safe): span `Books.Create` + metrica
+  `books.created`. **Logs via bridge Serilog→OTLP** (`Serilog.Sinks.OpenTelemetry`) che riattacca
+  `TraceId`/`SpanId` e porta il `CorrelationId` — chiude il cerchio di correlazione (`CorrelationId`↔`TraceId`↔
+  `traceId` dei ProblemDetails). Metriche del rate limiter incluse. Vedi `.claude/context/opentelemetry.md`, `[L18]`.
 - ⬜ **Resilience** (`Microsoft.Extensions.Http.Resilience` / Polly): retry/circuit-breaker/timeout
   su una dipendenza esterna (da introdurre insieme).
 

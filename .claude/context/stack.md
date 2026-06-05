@@ -16,10 +16,23 @@
 | `ZiggyCreatures.FusionCache` | Infrastructure | 2.6.0 |
 | `ZiggyCreatures.FusionCache.Serialization.SystemTextJson` | Infrastructure | 2.6.0 |
 | `ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis` | Infrastructure | 2.6.0 |
+| `OpenTelemetry.Extensions.Hosting` | API | 1.15.3 |
+| `OpenTelemetry.Instrumentation.AspNetCore` | API | 1.15.2 |
+| `OpenTelemetry.Instrumentation.Http` | API | 1.15.1 |
+| `OpenTelemetry.Instrumentation.Runtime` | API | 1.15.1 |
+| `OpenTelemetry.Instrumentation.EntityFrameworkCore` | API | 1.15.1-beta.1 (semantic conv DB sperimentali) |
+| `OpenTelemetry.Exporter.OpenTelemetryProtocol` | API | 1.15.3 |
+| `OpenTelemetry.Exporter.Console` | API | 1.15.3 |
+| `Serilog.Sinks.OpenTelemetry` | API | 4.2.0 |
 | `xunit` | Tests | 2.9.3 |
 | `Moq` | Tests | 4.20.72 |
 | `Microsoft.NET.Test.Sdk` | Tests | 17.12.0 |
+| `Microsoft.Extensions.Diagnostics.Testing` | Tests | (MetricCollector\<T>) |
 | `NetArchTest.Rules` | ArchitectureTests | 1.3.2 |
+
+> `ActivitySource`/`Meter` custom vivono in **Application** con le sole primitive BCL
+> (`System.Diagnostics.DiagnosticSource`, transitiva via `Microsoft.Extensions.Caching.Hybrid`): l'SDK
+> OpenTelemetry resta confinato in **API** (regola architetturale auto-validata).
 
 ## URL locali
 
@@ -82,4 +95,14 @@ Store su `IDistributedCache` (memoria; Redis se `Cache:Redis:ConnectionString` v
 
 ```json
 { "Idempotency": { "Ttl": "24:00:00" } }
+```
+
+## Config OpenTelemetry (sezione `OpenTelemetry`)
+
+Config-gated come la cache. `OtlpEndpoint` vuoto = telemetria solo raccolta (nessun export); valorizzandolo
+si esportano traces + metrics + logs via OTLP. `ConsoleExporter=true` stampa traces/metrics su console
+(visibilità locale senza collector). Vedi `.claude/context/opentelemetry.md`.
+
+```json
+{ "OpenTelemetry": { "OtlpEndpoint": "", "ServiceName": "WebApiPlayground.Api", "ConsoleExporter": false } }
 ```

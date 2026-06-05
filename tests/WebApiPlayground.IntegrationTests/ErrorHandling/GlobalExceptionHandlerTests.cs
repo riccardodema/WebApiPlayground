@@ -40,4 +40,22 @@ public class GlobalExceptionHandlerTests
             Api.Middleware.CorrelationIdMiddleware.HeaderName).Single();
         Assert.Equal(headerCorrelationId, problem.GetProperty("correlationId").GetString());
     }
+
+    [Fact]
+    public async Task UnhandledException_ProblemDetailsCarriesW3CTraceId()
+    {
+        var client = _factory.CreateAnonymousClient();
+
+        var response = await client.GetAsync("/__tests__/throw");
+
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var traceId = problem.GetProperty("traceId").GetString();
+
+        // Con OpenTelemetry attivo l'AspNetCore instrumentation popola Activity.Current: il traceId del
+        // ProblemDetails (ProblemDetailsEnricher) è quindi l'Activity.Id in formato W3C trace-context
+        // ("00-<32 hex traceId>-<16 hex spanId>-<2 hex flags>", 55 char) — la trace si salda all'errore.
+        Assert.NotNull(traceId);
+        Assert.StartsWith("00-", traceId);
+        Assert.Equal(55, traceId!.Length);
+    }
 }

@@ -1,6 +1,10 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using Microsoft.Extensions.Diagnostics.Metrics.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
+using WebApiPlayground.Application.Diagnostics;
 using WebApiPlayground.Application.DTOs;
 using WebApiPlayground.Application.Interfaces;
 using WebApiPlayground.Application.Querying;
@@ -144,6 +148,48 @@ public class BooksServiceTests
         Assert.Equal(1, result.Id);
         Assert.Equal("Clean Code", result.Title);
         Assert.Equal("Robert C. Martin", result.AuthorFullName);
+    }
+
+    [Fact]
+    public async Task CreateBookAsync_StartsBusinessActivity_AndRecordsMetric()
+    {
+        // Rete di salvataggio: la strumentazione OTel custom (span + metrica) deve passare per il *service
+        // reale*, non solo per l'helper. Un refactoring che la rimuove da CreateBookAsync rompe questo test.
+        var dto = new CreateBookDto("Domain-Driven Design", 4);
+        var createdBook = new Book
+        {
+            Id = 42, Title = dto.Title, AuthorId = 4, Author = new Author { Id = 4, FullName = "Eric Evans" },
+        };
+        _repositoryMock
+            .Setup(r => r.CreateAsync(It.Is<Book>(b => b.Title == dto.Title && b.AuthorId == dto.AuthorId)))
+            .ReturnsAsync(createdBook);
+
+        // L'ActivityListener è process-global e ConcurrentBag thread-safe: altri test possono creare span
+        // sulla stessa source in parallelo, perciò si filtra per il tag book.id (univoco in questo test).
+        var activities = new ConcurrentBag<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == BooksDiagnostics.ActivitySourceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> options) => ActivitySamplingResult.AllData,
+            ActivityStopped = activities.Add,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        _ = BooksDiagnostics.ActivitySource; // forza init Meter/Counter prima del collector
+        using var metrics = new MetricCollector<long>(
+            meterScope: null, BooksDiagnostics.MeterName, BooksDiagnostics.BooksCreatedCounterName);
+
+        await _sut.CreateBookAsync(dto);
+
+        var activity = Assert.Single(
+            activities,
+            a => a.OperationName == BooksDiagnostics.CreateBookActivityName && a.GetTagItem("book.id") is 42);
+        Assert.Equal(4, activity.GetTagItem("book.author_id"));
+
+        // La metrica è incrementata attraverso il service (almeno la nostra +1; il contatore è globale).
+        var snapshot = metrics.GetMeasurementSnapshot();
+        Assert.True(snapshot.Count >= 1);
+        Assert.All(snapshot, m => Assert.Equal(1, m.Value));
     }
 
     [Fact]

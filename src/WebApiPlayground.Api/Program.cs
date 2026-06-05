@@ -1,9 +1,11 @@
 using Scalar.AspNetCore;
 using Serilog;
+using Serilog.Sinks.OpenTelemetry;
 using WebApiPlayground.Api.Extensions;
 using WebApiPlayground.Api.HealthChecks;
 using WebApiPlayground.Api.Http;
 using WebApiPlayground.Api.Middleware;
+using WebApiPlayground.Api.Observability;
 using WebApiPlayground.Api.Validation;
 using WebApiPlayground.Api.Versioning;
 using WebApiPlayground.Application;
@@ -19,9 +21,32 @@ try
 
     var builder = WebApplication.CreateBuilder(args);
 
-    builder.Host.UseSerilog((context, services, configuration) => configuration
-        .ReadFrom.Configuration(context.Configuration)
-        .ReadFrom.Services(services));
+    builder.Host.UseSerilog((context, services, configuration) =>
+    {
+        configuration
+            .ReadFrom.Configuration(context.Configuration)
+            .ReadFrom.Services(services);
+
+        // Bridge Serilog → OTLP (config-gated come l'export di traces/metrics). Quando OtlpEndpoint è
+        // valorizzato, i log Serilog escono anche come record OTLP: il sink riattacca TraceId/SpanId
+        // dall'Activity corrente (log ↔ trace) e porta con sé le property del LogContext, incluso il
+        // CorrelationId. Il sink Console resta invariato. Vedi .claude/context/opentelemetry.md.
+        var otlpEndpoint = context.Configuration[$"{OpenTelemetryOptions.SectionName}:OtlpEndpoint"];
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+        {
+            var serviceName = context.Configuration[$"{OpenTelemetryOptions.SectionName}:ServiceName"]
+                              ?? "WebApiPlayground.Api";
+
+            configuration.WriteTo.OpenTelemetry(sink =>
+            {
+                sink.Endpoint = otlpEndpoint;
+                sink.Protocol = OtlpProtocol.Grpc;
+                sink.ResourceAttributes = new Dictionary<string, object> { ["service.name"] = serviceName };
+                sink.IncludedData = IncludedData.TraceIdField | IncludedData.SpanIdField
+                    | IncludedData.MessageTemplateTextAttribute | IncludedData.SpecRequiredResourceAttributes;
+            });
+        }
+    });
 
     // Il ValidationFilter (FluentValidation) gira su ogni action; le violazioni e quelle
     // di model binding (DataAnnotations) producono la STESSA risposta 400 ProblemDetails
@@ -36,6 +61,9 @@ try
             options.InvalidModelStateResponseFactory = ValidationProblemDetailsFactory.Create);
 
     builder.Services.AddApiProblemDetails();
+    // OpenTelemetry: traces + metrics (auto-instrumentation + source/meter custom), export config-gated.
+    // I log seguono il bridge Serilog → OTLP configurato sopra in UseSerilog.
+    builder.Services.AddApiObservability(builder.Configuration, builder.Environment);
     builder.Services.AddApiRateLimiting(builder.Configuration);
     // API versioning (segmento URL) + un documento OpenAPI per versione, con i transformer condivisi
     // (auth, validazione, idempotency, caching, rate limiting, versioning). Vedi ApiVersioningExtensions.

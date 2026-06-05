@@ -57,6 +57,18 @@ X-Correlation-Id: my-frontend-trace-abc123
 
 Il middleware riusa l'ID fornito, così il log lato server e lato client condividono lo stesso identificatore.
 
+### Bridge OpenTelemetry (log ↔ trace)
+
+Quando `OpenTelemetry:OtlpEndpoint` è valorizzato, `Program.cs` aggiunge un sink **`Serilog.Sinks.OpenTelemetry`**
+nel lambda `UseSerilog`: i log Serilog escono anche come record **OTLP**. Il sink:
+
+- **riattacca `TraceId`/`SpanId`** dall'`Activity` corrente → da un log salti alla trace e viceversa;
+- porta con sé le property del `LogContext`, **incluso il `CorrelationId`** → le due storie di correlazione
+  (header `X-Correlation-Id` ↔ `TraceId` W3C) convivono nello stesso record.
+
+Il sink **Console** resta invariato (template con `[{CorrelationId}]`). È config-gated: senza endpoint i log
+restano solo su console. Dettagli e setup in `.claude/context/opentelemetry.md`.
+
 ---
 
 ## Configurazione

@@ -42,6 +42,7 @@ Clean Architecture, dependencies point inwards (outer layers depend on inner, ne
 | Rate limiting (sliding window, per-client) | `Api/RateLimiting`, `Api/Extensions/RateLimitingExtensions` |
 | API versioning (URL segment, doc per version) | `Api/Versioning`, `Api/Extensions/ApiVersioningExtensions` |
 | Optimistic concurrency (rowversion → ETag/`If-Match`, 412/428) | `Api/Http/ETagResultFilter`, `Infrastructure/Repositories/BookRepository` |
+| Observability (OpenTelemetry: traces + metrics + logs via OTLP) | `Api/Extensions/OpenTelemetryExtensions`, `Application/Diagnostics/BooksDiagnostics` |
 
 ## Stack
 
@@ -52,6 +53,7 @@ Clean Architecture, dependencies point inwards (outer layers depend on inner, ne
 - **Native .NET rate limiting** (`System.Threading.RateLimiting`, sliding window)
 - **Asp.Versioning** for API versioning (URL segment, OpenAPI document per version)
 - **Optimistic concurrency** (EF Core `rowversion` → ETag / `If-Match`, 412/428)
+- **OpenTelemetry** (traces + metrics + logs over OTLP; Serilog → OTLP log bridge)
 - **xUnit · Moq · Testcontainers.MsSql** for testing
 - **SQL Database Project (DACPAC)** for the database schema
 
@@ -171,6 +173,39 @@ client expects is still current.
 
 Details and the conscious cache-L2 caveat:
 [`.claude/context/optimistic-concurrency.md`](.claude/context/optimistic-concurrency.md).
+
+## Observability
+
+Structured logs and a per-request correlation id already exist — but there were no **distributed traces**,
+no **metrics**, and no **vendor-neutral** channel to an observability backend. **OpenTelemetry** (the CNCF
+standard) emits the three signals through one API and exports them over **OTLP** to *any* backend (Jaeger,
+Tempo, Prometheus, the Aspire Dashboard, Datadog, App Insights…) without coupling the code to a vendor.
+
+- **Traces** — a request becomes a *waterfall* of spans (incoming HTTP → service → SQL query): you see
+  *where* the time goes and *what* a single request did, end to end.
+- **Metrics** — aggregate time series (request rate, latency, error rate, GC, the rate limiter's queues):
+  ASP.NET Core, EF Core and the runtime emit them "for free".
+- **Logs** — the existing Serilog logs, now **correlated to the trace**: each log inside a span carries
+  `TraceId`/`SpanId`, so you jump from a log to the full trace and back.
+- **Closes the correlation loop** already started with the correlation id: `CorrelationId` (client header) ↔
+  `TraceId` (W3C, cross-service) ↔ the `traceId` already present in every ProblemDetails error.
+
+How it's built (2026 best practices):
+
+- **SDK only at the composition root.** Business code is instrumented with **BCL primitives**
+  (`ActivitySource`/`Meter`) in the Application layer; the OTel SDK and exporters live **only** in the Api —
+  so the layering rules (auto-validated by NetArchTest) stay intact. A custom span `Books.Create` and a
+  `books.created` metric showcase manual instrumentation alongside the framework's auto-instrumentation.
+- **Config-gated export**, like Redis caching: empty `OtlpEndpoint` ⇒ telemetry is collected but not
+  exported (negligible cost); set it ⇒ OTLP export of traces + metrics + logs. `ConsoleExporter=true` prints
+  telemetry locally without a collector.
+- **Logs via a Serilog → OTLP bridge** (`Serilog.Sinks.OpenTelemetry`): the sink re-attaches `TraceId`/`SpanId`
+  and carries the `CorrelationId` along; the console sink is unchanged.
+- **Free framework metrics**, including the **rate limiter** meter (active leases, queues, rejections).
+
+View it locally with the one-container **.NET Aspire Dashboard**
+(`docker run … mcr.microsoft.com/dotnet/aspire-dashboard`, OTLP on `:4317`). Details:
+[`.claude/context/opentelemetry.md`](.claude/context/opentelemetry.md).
 
 ## Database as code
 
