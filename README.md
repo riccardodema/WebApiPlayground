@@ -43,6 +43,7 @@ Clean Architecture, dependencies point inwards (outer layers depend on inner, ne
 | API versioning (URL segment, doc per version) | `Api/Versioning`, `Api/Extensions/ApiVersioningExtensions` |
 | Optimistic concurrency (rowversion → ETag/`If-Match`, 412/428) | `Api/Http/ETagResultFilter`, `Infrastructure/Repositories/BookRepository` |
 | Observability (OpenTelemetry: traces + metrics + logs via OTLP) | `Api/Extensions/OpenTelemetryExtensions`, `Application/Diagnostics/BooksDiagnostics` |
+| Resilience (Polly v8: retry + circuit breaker + timeout on an external dependency, 503 fail-fast) | `Infrastructure/Popularity/BookPopularityRegistration`, `Api/ErrorHandling/ExternalServiceUnavailableExceptionHandler` |
 
 ## Stack
 
@@ -54,6 +55,7 @@ Clean Architecture, dependencies point inwards (outer layers depend on inner, ne
 - **Asp.Versioning** for API versioning (URL segment, OpenAPI document per version)
 - **Optimistic concurrency** (EF Core `rowversion` → ETag / `If-Match`, 412/428)
 - **OpenTelemetry** (traces + metrics + logs over OTLP; Serilog → OTLP log bridge)
+- **HTTP resilience** (`Microsoft.Extensions.Http.Resilience` / **Polly v8** — retry, circuit breaker, timeout on an external dependency)
 - **xUnit · Moq · Testcontainers.MsSql** for testing
 - **SQL Database Project (DACPAC)** for the database schema
 
@@ -206,6 +208,39 @@ How it's built (2026 best practices):
 View it locally with the one-container **.NET Aspire Dashboard**
 (`docker run … mcr.microsoft.com/dotnet/aspire-dashboard`, OTLP on `:4317`). Details:
 [`.claude/context/opentelemetry.md`](.claude/context/opentelemetry.md).
+
+## Resilience
+
+The moment an API calls **another service**, that service's latency and failures become *yours*: a slow or
+flapping dependency can hang your threads, exhaust your connection pool and cascade into an outage — even
+though *your* code is fine. A new endpoint **`GET /api/v1/books/{id}/popularity`** enriches a book with
+popularity signals from a real external dependency (**[Open Library](https://openlibrary.org)** — ratings +
+reading-log counts, the best *free* proxy for demand; real sales data isn't public), wrapped in a **Polly v8**
+resilience pipeline (`Microsoft.Extensions.Http.Resilience`).
+
+- **An explicit pipeline, not a black box.** Composed by hand so every strategy is visible and tunable,
+  in the order that matters — **total timeout → retry → circuit breaker → per-attempt timeout** (outer→inner):
+  - **Retry** with **exponential backoff + jitter**, on **transient** failures only (5xx/408/429/network/timeout).
+    **4xx are never retried** (pointless and harmful); the jitter avoids a synchronized **retry storm**. Safe
+    here because the call is an idempotent `GET`.
+  - **Circuit breaker** — when the dependency is down, the breaker **opens** and **fails fast** without touching
+    the network, protecting *us* (no threads parked on a dead service) *and them* (room to recover), then probes
+    via half-open.
+  - **Timeouts** at two levels: a **per-attempt** timeout cuts a single slow call so retry can step in, and a
+    **total** timeout caps the whole retry sequence so the caller never waits unbounded.
+- **Graceful degradation, not a 500.** When resilience is exhausted (circuit open, retries spent, timeout), the
+  transport/Polly exception is translated to a domain `ExternalServiceUnavailableException` (it never leaks past
+  Infrastructure) and mapped to **`503 Service Unavailable`** as RFC 7807 ProblemDetails with a **`Retry-After`**
+  header and the same `correlationId`/`traceId` as every other error — and the `503` is **documented in the
+  OpenAPI contract**, not implicit.
+- **Clean layering, enforced.** Only the abstraction `IBookPopularityClient` lives in Application; the typed
+  `HttpClient` and the Polly pipeline live in Infrastructure — a **NetArchTest rule** fails the build if Polly or
+  `Microsoft.Extensions.Http` ever leak upward, exactly like the cache abstraction.
+- **Security-minded**: the host is fixed config (no SSRF — user input is only URL-encoded query string), the
+  dependency is key-less (no secrets), timeouts/breaker are an **availability defense**, and upstream errors are
+  never echoed to the client. Config-driven and read lazily at request time.
+
+Details and the strategy trade-offs: [`.claude/context/resilience.md`](.claude/context/resilience.md).
 
 ## Database as code
 

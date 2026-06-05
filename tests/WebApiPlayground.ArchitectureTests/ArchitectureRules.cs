@@ -33,6 +33,12 @@ internal static class ArchitectureRules
     internal static readonly string[] CacheImplementationNamespaces =
         ["ZiggyCreatures.Caching.Fusion", "StackExchange.Redis", "Microsoft.Extensions.Caching.StackExchangeRedis"];
 
+    // Resilienza + HttpClient: Application dipende solo dall'astrazione IBookPopularityClient. Polly e
+    // Microsoft.Extensions.Http(.Resilience) sono dettagli del client tipizzato e della pipeline, confinati
+    // alla composition root (Infrastructure). Stesso principio della cache.
+    internal static readonly string[] ResilienceImplementationNamespaces =
+        ["Polly", "Microsoft.Extensions.Http"];
+
     // Assembly anchor: un tipo pubblico stabile per ciascun layer.
     internal static readonly Assembly DomainAssembly = typeof(Book).Assembly;
     internal static readonly Assembly ApplicationAssembly = typeof(IBookRepository).Assembly;

@@ -72,8 +72,13 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
   `books.created`. **Logs via bridge Serilog→OTLP** (`Serilog.Sinks.OpenTelemetry`) che riattacca
   `TraceId`/`SpanId` e porta il `CorrelationId` — chiude il cerchio di correlazione (`CorrelationId`↔`TraceId`↔
   `traceId` dei ProblemDetails). Metriche del rate limiter incluse. Vedi `.claude/context/opentelemetry.md`, `[L18]`.
-- ⬜ **Resilience** (`Microsoft.Extensions.Http.Resilience` / Polly): retry/circuit-breaker/timeout
-  su una dipendenza esterna (da introdurre insieme).
+- ✅ **Resilience** (`Microsoft.Extensions.Http.Resilience` / Polly v8): pipeline **esplicita**
+  (timeout totale → retry backoff+jitter → circuit breaker → timeout per-tentativo) su una dipendenza
+  esterna reale — **Open Library** come HttpClient tipizzato. Nuovo endpoint
+  `GET /api/v1/books/{id}/popularity` (proxy gratuito di domanda: rating + reading-log; i dati di vendita
+  reali non sono pubblici). Esaurimento → **503 ProblemDetails** + `Retry-After` (handler dedicato nella
+  catena, stesso `correlationId`/`traceId`). Astrazione `IBookPopularityClient` in Application, resilienza
+  in Infrastructure (regola NetArchTest che lo enforce). Vedi `.claude/context/resilience.md`, `[L19]`.
 
 ## Tier 4 — Asincronia / messaging (capstone)
 

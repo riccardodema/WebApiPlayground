@@ -382,6 +382,47 @@ il bridge in `Program.cs` e i test in `tests/.../Observability/` + `Tests/Diagno
 
 ---
 
+## [L19] Resilience HTTP (Polly v8 / Microsoft.Extensions.Http.Resilience): timeout, predicato transient, opzioni lazy, test
+
+**Contesto:** pipeline di resilienza esplicita (retry/circuit-breaker/timeout) su una dipendenza esterna
+(Open Library) come HttpClient tipizzato. Dettagli in `.claude/context/resilience.md`.
+
+**Errori e cause:**
+- **`HttpClient.Timeout` combatte col timeout della pipeline.** Lasciare il default (100s) mette un timeout
+  *grezzo e non ritentabile* **sopra** la pipeline: scade fuori da Polly, niente retry, niente
+  `TimeoutRejectedException`. → Impostare `httpClient.Timeout = Timeout.InfiniteTimeSpan` e delegare **tutti** i
+  timeout (per-tentativo + totale) alla pipeline.
+- **Versione del pacchetto vs baseline `NU1605`.** L'ultima `Microsoft.Extensions.Http.Resilience` (10.6.0)
+  tira transitivi `Microsoft.Extensions.*` 10.6.x in conflitto col baseline **10.0.0** pinnato (downgrade come
+  errore, come in [L11]). → Pinnare **10.0.0** (allineato): porta `Polly.Core` 8.4.2 e `Microsoft.Extensions.Http`
+  10.0.0 senza conflitti.
+- **`ShouldHandle` di default = transitori.** Gli option type **Http** (`HttpRetryStrategyOptions`,
+  `HttpCircuitBreakerStrategyOptions`) hanno `ShouldHandle` = `HttpClientResiliencePredicates.IsTransient`
+  (5xx/408/429/`HttpRequestException`/`TimeoutRejectedException`): i **4xx non vengono ritentati** *gratis*. Non
+  reimpostarlo a mano se non serve. Il timeout usa `HttpTimeoutStrategyOptions`/`AddTimeout(TimeSpan)` (nessun
+  predicato).
+- **Retry esaurito NON lancia: restituisce l'ultimo outcome.** Dopo i tentativi su un 5xx, la strategia retry
+  ritorna l'ultima `HttpResponseMessage` (non-2xx), non un'eccezione. → Il client deve controllare
+  `IsSuccessStatusCode` e tradurre lui il fallimento in `ExternalServiceUnavailableException`. Le eccezioni vere
+  (`BrokenCircuitException`/`TimeoutRejectedException`/`HttpRequestException`) si catturano a parte.
+- **`BrokenCircuitException` (Polly 8.4.2) non espone `RetryAfter`.** → L'handler 503 ricade su una
+  `BreakDuration`/fallback configurata per l'header `Retry-After`.
+- **Opzioni lette troppo presto = override di test ignorati** (stesso bug di [L15]). Leggere le opzioni alla
+  registrazione ignora gli override di `WebApplicationFactory`. → Usare l'overload **con `context`** di
+  `AddResilienceHandler` e leggere `IOptionsMonitor<T>.CurrentValue` **lazy** dentro il configuratore (post-build).
+- **Testare la pipeline reale senza rete.** Costruire il client con la **registrazione di produzione**
+  (`AddBookPopularityClient` + config in-memory minuscola) e poi `ConfigurePrimaryHttpMessageHandler(() => stub)`
+  (l'ultima registrazione vince): si esercita la pipeline vera, non un mock. Il **circuit breaker fa fail-fast
+  senza colpire il transport** → asserire che il contatore di invocazioni dello stub **non** aumenta è la prova
+  che il circuito è aperto. La sola unit dei timeout è robusta se asserisce il tipo (`TimeoutRejectedException`
+  come inner) e `Invocations >= 1`, non un conteggio esatto (il predicato transient può ritentare o no).
+
+**Soluzione:** vedi `Infrastructure/Popularity/BookPopularityRegistration.cs` (pipeline + opzioni lazy),
+`OpenLibraryPopularityClient.cs` (traduzione errori), `Api/ErrorHandling/ExternalServiceUnavailableExceptionHandler.cs`
+(503 + Retry-After) e i test in `tests/.../Popularity/`.
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

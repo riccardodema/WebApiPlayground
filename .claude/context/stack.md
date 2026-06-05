@@ -13,6 +13,7 @@
 | `Microsoft.Extensions.Configuration.Binder` | Infrastructure | 10.0.0 |
 | `Microsoft.Extensions.Options.ConfigurationExtensions` | Infrastructure | 10.0.0 |
 | `Microsoft.Extensions.Caching.StackExchangeRedis` | Infrastructure | 10.0.0 |
+| `Microsoft.Extensions.Http.Resilience` | Infrastructure | 10.0.0 (Polly v8; pin 10.0.0 = baseline, vedi [L19]) |
 | `ZiggyCreatures.FusionCache` | Infrastructure | 2.6.0 |
 | `ZiggyCreatures.FusionCache.Serialization.SystemTextJson` | Infrastructure | 2.6.0 |
 | `ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis` | Infrastructure | 2.6.0 |
@@ -105,4 +106,20 @@ si esportano traces + metrics + logs via OTLP. `ConsoleExporter=true` stampa tra
 
 ```json
 { "OpenTelemetry": { "OtlpEndpoint": "", "ServiceName": "WebApiPlayground.Api", "ConsoleExporter": false } }
+```
+
+## Config resilience / dipendenza esterna (sezione `BookPopularity`)
+
+Config-gated/out-of-the-box come la cache: `BaseAddress` punta a Open Library (key-less → nessun segreto, host
+fisso → niente SSRF). `Resilience` configura la pipeline Polly esplicita (timeout totale → retry backoff+jitter
+→ circuit breaker → timeout per-tentativo). Vedi `.claude/context/resilience.md`.
+
+```json
+{ "BookPopularity": {
+    "BaseAddress": "https://openlibrary.org",
+    "Resilience": {
+      "AttemptTimeout": "00:00:03", "TotalTimeout": "00:00:10",
+      "Retry": { "MaxRetryAttempts": 3, "BaseDelay": "00:00:00.500" },
+      "CircuitBreaker": { "FailureRatio": 0.5, "SamplingDuration": "00:00:30", "MinimumThroughput": 10, "BreakDuration": "00:00:15" }
+} } }
 ```
