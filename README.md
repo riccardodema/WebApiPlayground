@@ -314,6 +314,47 @@ CI/CD on both platforms ([`.github/workflows/infra.yml`](.github/workflows/infra
 `main` gated by the `production` environment. Same *disabled-until-configured* pattern as the app
 deploy — the deploy job is skipped (not failed) until `AZURE_LOCATION` is set.
 
+## Containerization
+
+Until now Docker was used **only for tests** (Testcontainers spins up an ephemeral SQL Server *for the
+test process* — the app itself runs in-process). A **`Dockerfile`** and **`docker-compose`** add the two
+missing pieces: the app as a **portable, reproducible artifact**, and the **whole runtime stack in one
+command**. They're complementary to Testcontainers, which stays exactly as it is — the Dockerfile doesn't
+change how tests run.
+
+- **Multi-stage image, chiseled & non-root.** Build on the .NET 10 SDK image (csproj copied first so the
+  NuGet `restore` layer stays cached), run on **`aspnet:10.0-noble-chiseled`** — a distroless-style image
+  with **no shell/package manager**, running as the **non-root `app`** user on port **8080**. Smaller attack
+  surface, faster pulls. (No curl-based `HEALTHCHECK`: chiseled has no shell, so liveness is an external HTTP
+  probe.)
+- **`docker compose up` = full local stack.** API + **SQL Server** + the **schema published from the DACPAC**
+  (a one-shot `db-migrations` service that reuses the same `deploy.sh` as CI — "DACPAC is the source of
+  truth"), wired with health checks and ordered startup (`api` waits for the DB to be *healthy* and the
+  migrations to *complete*). No local SQL Server install, no manual connection string — the onboarding is
+  genuinely one command. Optional **Redis** (L2 cache + backplane) and **Aspire Dashboard** (OTLP telemetry)
+  are off by default behind compose override files.
+- **What it gives over Testcontainers**: a deploy-ready artifact (same image dev → CI → prod, the base for
+  App Service for Containers / Kubernetes / Container Apps), and a way to exercise the **real** app against
+  real dependencies — not the test stubs (auth, Open Library) — clicking through Scalar against a live stack.
+- **Explicit fail-fast on config.** Outside Development the app **refuses to start** if mandatory settings are
+  missing, listing **exactly** which ones (and their env-var form) — `ConnectionStrings:Default`,
+  `AzureAd:ClientId/TenantId/Audience`. Locally compose runs in Development, so the dev auth bypass + Scalar
+  work with zero config; the image defaults to Production (12-factor).
+- **Tested as code.** `tests/WebApiPlayground.DockerTests` holds static **contract tests** (non-root chiseled
+  base, no plaintext secrets, port 8080, health check, migrations-before-api — fast, no Docker) plus a **live
+  smoke test** that builds the image, starts the container and asserts `GET /health/live` — which doubles as
+  `docker build` validation in CI.
+
+```bash
+cp .env.example .env                 # set MSSQL_SA_PASSWORD
+docker compose up --build            # API + SQL + schema → http://localhost:8080/scalar/v1
+docker compose -f docker-compose.yml -f docker-compose.aspire.yml up   # + OTLP dashboard (:18888)
+```
+
+> On Apple Silicon (arm64) the SQL Server image runs under emulation (`platform: linux/amd64`).
+
+Details and the Testcontainers-vs-image-vs-compose distinction: [`.claude/context/docker.md`](.claude/context/docker.md).
+
 ## Testing
 
 - **Unit** — `tests/WebApiPlayground.Tests` (xUnit + Moq), services in isolation.
@@ -324,6 +365,9 @@ deploy — the deploy job is skipped (not failed) until `AZURE_LOCATION` is set.
   EF Core or ASP.NET; lower layers must not depend on the API). Fast, no DB or Docker.
 - **Infrastructure** — `tests/WebApiPlayground.IacTests`, compiles the Bicep to ARM and asserts
   the security posture / idempotency (no Azure or Docker; skipped if the Bicep CLI is absent).
+- **Docker** — `tests/WebApiPlayground.DockerTests`, static contract tests over the Dockerfile/compose
+  (fast, no Docker) plus a live smoke test that builds the image and hits `/health/live` (skipped if the
+  Docker daemon is absent).
 
 ```bash
 dotnet test
@@ -356,6 +400,12 @@ dotnet run --project src/WebApiPlayground.Api/WebApiPlayground.Api.csproj
 # OpenAPI doc: http://localhost:5242/openapi/v1.json
 ```
 
+Or run the whole stack (API + SQL + schema) in containers — no local SQL Server needed:
+
+```bash
+cp .env.example .env && docker compose up --build   # Scalar UI: http://localhost:8080/scalar/v1
+```
+
 From **VS Code press F5** (`Debug (http)`): it builds, runs and opens the browser on
 `http://localhost:5242/scalar/v1` automatically (via the `serverReadyAction` in
 [.vscode/launch.json](.vscode/launch.json)). Entra ID is optional locally — when `AzureAd` is
@@ -381,7 +431,9 @@ tests/
   WebApiPlayground.ArchitectureTests NetArchTest layering rules (auto-validated architecture)
   WebApiPlayground.IntegrationTests Testcontainers-based integration tests
   WebApiPlayground.IacTests        Bicep→ARM infrastructure unit tests
+  WebApiPlayground.DockerTests     Dockerfile/compose contract tests + live image smoke test
 database/                          SQL project (DACPAC) — schema as code
 infra/                             Bicep IaC (Azure Key Vault) — infra as code
 .azure/ · .github/                 CI/CD on Azure DevOps and GitHub Actions
+Dockerfile · docker-compose*.yml   container image + local runtime stack
 ```

@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!--
+    Test della containerizzazione (Docker as code). Non referenzia codice C#:
+    - contract test STATICI su Dockerfile / .dockerignore / docker-compose (veloci, leggono i
+      file, nessun Docker) — stesso spirito di IacTests con i template Bicep;
+    - uno smoke test LIVE che builda l'immagine, avvia il container e colpisce /health/live
+      (richiede Docker; si SKIPpa se il daemon non è disponibile, come IacTests con la Bicep CLI).
+    Vedi .claude/context/docker.md.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="Testcontainers" Version="4.4.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.61" />
+  </ItemGroup>
+
+</Project>

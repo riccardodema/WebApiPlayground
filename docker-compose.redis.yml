@@ -1,0 +1,23 @@
+# Override opzionale: aggiunge Redis e cabla l'API per usarlo come cache L2 + backplane
+# (oggi config-gated da Cache:Redis:ConnectionString). Off di default.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.redis.yml up
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
+    environment:
+      # Valorizzare la connection string Redis attiva L2 + backplane multi-istanza.
+      Cache__Redis__ConnectionString: "redis:6379"
+    depends_on:
+      redis:
+        condition: service_healthy

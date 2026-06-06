@@ -560,6 +560,59 @@ transazionale in `Infrastructure/Repositories/BookRepository.cs`, la registrazio
 
 ---
 
+## [L23] Containerizzazione dell'API: chiseled non-root, schema via DACPAC, fail-fast config, arm64
+
+**Contesto:** Tier 5 — Dockerfile + docker-compose per l'API (prima Docker serviva solo ai test via
+Testcontainers). Dettagli in `.claude/context/docker.md`.
+
+**Errori e cause:**
+- **Testcontainers ≠ Dockerfile ≠ compose.** Testcontainers containerizza *la dipendenza* (SQL) **per i
+  test** (app in-process); il Dockerfile containerizza *l'app* come artefatto; compose orchestra lo *stack
+  reale* in locale. Sono complementari: il Dockerfile **non** tocca come girano i test.
+- **Chiseled = niente shell.** La runtime chiseled è distroless-style: nessun `bash`/`curl`. → **niente
+  `HEALTHCHECK` curl-based** nel Dockerfile (fallirebbe sempre); le probe sono **HTTP esterne**
+  (compose/orchestratore via `/health/live`). Stesso motivo: niente `docker exec bash`.
+- **Chiseled `-extra` per SqlClient (scoperto nella prova E2E vera).** La chiseled "liscia"
+  (`aspnet:10.0-noble-chiseled`) **non include ICU** → .NET parte in *Globalization Invariant Mode*, e
+  **`Microsoft.Data.SqlClient` (EF Core SqlServer) NON lo supporta**: l'app si avvia e `/health/live` è
+  200, ma **ogni query DB esplode** con `Globalization Invariant Mode is not supported` (→ `/health/ready`
+  503, endpoint dati 500). Lo smoke test, che colpisce solo `/health/live`, **non** lo prende: serve la
+  prova E2E col DB. Fix: base **`aspnet:10.0-noble-chiseled-extra`** (chiseled + ICU + tzdata, sempre
+  non-root/no-shell). Asserito nel contract test.
+- **Porta host 1433 spesso occupata.** Un SQL Server / Azure SQL Edge locale tiene già `0.0.0.0:1433`
+  (`port is already allocated` allo `up`). L'API parla al DB via rete interna (`db:1433`), quindi la
+  pubblicazione sull'host serve solo a client esterni → resa configurabile: `ports: ["${SQL_HOST_PORT:-1433}:1433"]`
+  (override con `SQL_HOST_PORT` in `.env`).
+- **Porta non privilegiata.** Da utente **non-root** (`USER $APP_UID`, UID 64198, default dell'immagine) non
+  si fa bind sotto la 1024 → l'app ascolta su **8080** (`ASPNETCORE_HTTP_PORTS=8080`), non 80.
+- **Production non parte senza config — di proposito.** Fuori da Development l'app fa **fail-fast esplicito**
+  (`StartupConfigurationValidator` in testa a `Program.cs`): se mancano `ConnectionStrings:Default` o
+  `AzureAd:ClientId/TenantId/Audience` lancia elencando **tutte** le chiavi mancanti + la forma env var
+  (`AzureAd__ClientId`, …). Gate `!IsDevelopment` **condiviso** col bypass auth ([L12]) → test e compose
+  girano in Development e non sono toccati. La connection string mancante prima falliva *lazy* (alla prima
+  query/`/health/ready`), non allo startup e senza dire cosa mancava.
+- **compose in Development per la DX.** L'immagine di default è Production (12-factor), ma il compose la fa
+  girare in Development: così in locale hai Scalar UI + auth BYPASS + niente HTTPS redirect senza configurare
+  Entra. (Lo smoke test per lo stesso motivo gira in Development: `/health/live` deve rispondere su HTTP.)
+- **Schema: DACPAC, non `EnsureCreated`.** Un servizio `db-migrations` one-shot **riusa `deploy.sh`**
+  (`sqlpackage publish`, seed incluso) e l'`api` lo attende con `depends_on: condition:
+  service_completed_successfully` (+ `db` `service_healthy`). Far creare lo schema all'app (EF
+  `EnsureCreated`) bypasserebbe la source of truth DACPAC e perderebbe il seed.
+- **arm64 (Apple Silicon).** L'immagine `mssql/server` è **solo amd64** → serve `platform: linux/amd64`
+  (emulazione Rosetta, più lenta ma funziona). Vincolo già implicito coi Testcontainers.
+- **Segreti fuori dall'immagine e dal compose.** Il `.dockerignore` esclude `appsettings.Development.json`
+  (la connection string locale **non** si imbarca: in container arriva da env). La SA password sta in `.env`
+  (gitignored), nel compose solo `${MSSQL_SA_PASSWORD}`; nel test contract si asserisce che la dev password
+  reale non compaia mai.
+- **Healthcheck compose: escape `$`.** In `test: ["CMD-SHELL", "… -P \"$$MSSQL_SA_PASSWORD\" …"]` il `$$`
+  evita l'interpolazione di compose così la var la espande la shell *dentro* il container.
+
+**Soluzione:** vedi `Dockerfile`, `.dockerignore`, `database/Dockerfile`, `docker-compose*.yml`,
+`.env.example`, `src/WebApiPlayground.Api/Configuration/StartupConfigurationValidator.cs` e i test in
+`tests/WebApiPlayground.DockerTests/` (contract + smoke). Documentazione: `.claude/context/docker.md`.
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

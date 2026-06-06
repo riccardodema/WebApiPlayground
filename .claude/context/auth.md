@@ -58,6 +58,17 @@ non è impostato (es. app registration non ancora creata):
 > prima richiesta — Bearer è lo schema di default, quindi `UseAuthentication` lo risolve per *ogni*
 > richiesta e ne fa 500, inclusa `/scalar/v1` (la UI non si apre nemmeno). Vedi `.claude/lessons.md` [L12].
 
+### Fail-fast esplicito fuori da Development
+
+Fuori da Development l'app **non parte** se manca configurazione obbligatoria — e lo dice chiaramente.
+In testa a `Program.cs`, `StartupConfigurationValidator.ValidateRequiredConfiguration` (gate `!IsDevelopment`,
+lo **stesso** del bypass auth qui sopra) verifica `AzureAd:ClientId/TenantId/Audience` **e**
+`ConnectionStrings:Default`: se ne manca anche una, lancia elencandole **tutte** con la forma env var
+(`AzureAd__ClientId`, `ConnectionStrings__Default`, …), così chi esegue l'immagine sa esattamente cosa
+impostare. In Development restano opzionali (connection string da `appsettings.Development.json`, auth in
+BYPASS). Questo aggrega in un unico messaggio quello che prima era sparso (l'eccezione auth) o silenzioso (la
+connection string mancante falliva *lazy*). Vedi `.claude/context/docker.md` e `.claude/lessons.md` [L23].
+
 ## Setup Entra (una tantum, portale o CLI)
 
 1. **Registra l'app API** → *Expose an API*: Application ID URI `api://<clientId>`, aggiungi gli

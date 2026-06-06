@@ -1,0 +1,21 @@
+# Override opzionale: aggiunge la .NET Aspire Dashboard (un container) e cabla l'API per
+# esportare traces+metrics+logs via OTLP (oggi config-gated da OpenTelemetry:OtlpEndpoint).
+# Off di default.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.aspire.yml up
+#   # Dashboard UI: http://localhost:18888
+
+services:
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
+    environment:
+      # Locale: nessuna API key sull'endpoint OTLP.
+      DASHBOARD__OTLP__AUTHMODE: Unsecured
+    ports:
+      - "18888:18888"   # UI web
+      - "18889:18889"   # ingestione OTLP (gRPC)
+
+  api:
+    environment:
+      OpenTelemetry__OtlpEndpoint: "http://aspire-dashboard:18889"
+      OpenTelemetry__ServiceName: "WebApiPlayground.Api"

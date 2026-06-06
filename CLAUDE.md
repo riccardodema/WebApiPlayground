@@ -34,6 +34,7 @@
 | Monitoring/diagnostics del Key Vault (audit log, Log Analytics, KQL) | `infra/docs/monitoring.md` |
 | Schema DB versionato, SQL project, DACPAC, deploy/seed | `.claude/context/database.md` |
 | Modificare tabelle/schema o allineare entità EF al DB | `.claude/context/database.md` + `.claude/context/conventions.md` |
+| Containerizzazione: Dockerfile multi-stage chiseled non-root, docker-compose (API+SQL+migrations DACPAC, override Redis/Aspire), differenza vs Testcontainers, fail-fast config in Production, smoke test live; arm64 `platform: linux/amd64` | `.claude/context/docker.md` + `.claude/lessons.md` [L23] |
 
 ## Quick reference
 
@@ -43,7 +44,8 @@ Test:   dotnet test tests/WebApiPlayground.Tests/WebApiPlayground.Tests.csproj
 DB:     dotnet build database/WebApiPlayground.Database.sqlproj -c Release   (→ DACPAC)
 Deploy: DB_CONNECTION=... ./database/deploy.sh   (publish | script)
 IaC:    AZURE_SUBSCRIPTION_ID=... ./infra/deploy.sh   (whatif | deploy)
-UI:     http://localhost:5242/scalar/v1
+Docker: cp .env.example .env && docker compose up --build   (API+SQL → http://localhost:8080/scalar/v1)
+UI:     http://localhost:5242/scalar/v1   (docker compose: :8080)
 JSON:   http://localhost:5242/openapi/v1.json
 ```
 

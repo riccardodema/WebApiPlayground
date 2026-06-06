@@ -5,6 +5,10 @@ appsettings.*.json
 .claude/settings.local.json
 .mcp.json
 
+# Docker — secret/override locali per docker-compose (la SA password vive qui, non nel repo).
+# Il template `.env.example` è invece versionato.
+.env
+
 # globs
 Makefile.in
 *.userprefs

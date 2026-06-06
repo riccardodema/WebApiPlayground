@@ -69,6 +69,16 @@ jobs:
           --logger "trx;LogFileName=integration.trx"
           --results-directory TestResults
 
+      # Docker tests: contract test statici su Dockerfile/compose + smoke test LIVE che builda
+      # l'immagine API e colpisce /health/live (vale anche da validazione del `docker build`).
+      # Docker è disponibile su ubuntu-latest, come per Testcontainers.
+      - name: Docker tests
+        run: >
+          dotnet test tests/WebApiPlayground.DockerTests/WebApiPlayground.DockerTests.csproj
+          --configuration ${{ inputs.build-configuration }} --no-build
+          --logger "trx;LogFileName=docker.trx"
+          --results-directory TestResults
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7

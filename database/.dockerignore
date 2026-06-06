@@ -1,0 +1,4 @@
+# Il build context del servizio migrations è database/: escludi gli output di build
+# (il DACPAC viene rigenerato dentro l'immagine).
+bin/
+obj/

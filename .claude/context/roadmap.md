@@ -111,8 +111,11 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
   documentate in `architecture.md` → architettura auto-validante. Progetto
   `tests/WebApiPlayground.ArchitectureTests/`, agganciato alla CI insieme agli unit test (Tier 5
   parzialmente avviato in anticipo rispetto alla cache, su richiesta). Vedi `architecture.md`.
-- ⬜ **Dockerfile + docker-compose** per l'API (oggi si containerizzano solo i test via
-  Testcontainers).
+- ✅ **Dockerfile + docker-compose** per l'API: immagine multi-stage **chiseled non-root** (porta
+  8080), servizio `db-migrations` one-shot che pubblica lo schema via DACPAC (riusa `deploy.sh`),
+  stack locale in un comando (API + SQL + opz. Redis/Aspire via override). Più **fail-fast esplicito**
+  sulla config obbligatoria fuori da Development. Test contract + smoke live in `DockerTests`. Prima
+  Docker serviva solo ai test (Testcontainers). Vedi `docker.md` + [L23].
 - ⬜ **Key Vault config provider** a runtime: l'app legge i secret dalla KV già creata in IaC.
 
 ---
