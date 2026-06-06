@@ -55,6 +55,17 @@ public class OpenTelemetryTracingTests : IAsyncLifetime
         return (listener, activities);
     }
 
+    // Lo span server (ASP.NET Core) si chiude poco DOPO che il client ha ricevuto la risposta: attendiamo che
+    // compaia nel bag PRIMA di smontare il listener globale, così la cattura è deterministica e non dipende dal
+    // timing di teardown della richiesta (la fragilità nota della cattura span nei test, vedi [L18]).
+    private static async Task WaitForSpanAsync(
+        IReadOnlyCollection<Activity> activities, Func<Activity, bool> predicate, TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (DateTimeOffset.UtcNow < deadline && !activities.Any(predicate))
+            await Task.Delay(20);
+    }
+
     private async Task<Author> SeedAuthorAsync()
     {
         using var scope = _factory.Services.CreateScope();
@@ -73,6 +84,7 @@ public class OpenTelemetryTracingTests : IAsyncLifetime
         {
             var response = await _readClient.GetAsync("/api/v1/books");
             response.EnsureSuccessStatusCode();
+            await WaitForSpanAsync(activities, a => a.Kind == ActivityKind.Server, TimeSpan.FromSeconds(2));
         }
 
         // Auto-instrumentation ASP.NET Core: uno span server per la richiesta HTTP.
@@ -91,6 +103,7 @@ public class OpenTelemetryTracingTests : IAsyncLifetime
             var response = await _writeClient.PostAsJsonAsync(
                 "/api/v1/books", new CreateBookDto("Observability in Action", author.Id));
             response.EnsureSuccessStatusCode();
+            await WaitForSpanAsync(activities, a => a.Kind == ActivityKind.Server, TimeSpan.FromSeconds(2));
         }
 
         // Span di business custom presente e annidato nello stesso trace dello span server (contesto propagato).

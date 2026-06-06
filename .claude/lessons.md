@@ -509,6 +509,57 @@ il producer in `Application/Services/BooksService.cs`, il fallback in `BookPopul
 
 ---
 
+## [L22] Transactional outbox (senza broker, PR-1): atomicità con chiave IDENTITY, processore separato dal loop, test deterministici
+
+**Contesto:** Tier 4 step 2 — l'arricchimento popolarità passa da coda in-memory (at-most-once, [L21]) a **outbox
+transazionale** (at-least-once durevole). PR-1 senza broker: il dispatcher consegna in-process. Dettagli in
+`.claude/context/outbox.md`.
+
+**Errori e cause:**
+- **Outbox ≠ broker.** L'Outbox è un pattern *lato DB* (riga messaggio nella stessa transazione della write); il
+  broker è solo il trasporto. Si può fare (e si è fatto) l'Outbox **senza** broker → at-least-once subito, ASB poi.
+- **Atomicità con chiave store-generated.** Il `BookId` è IDENTITY: non esiste prima dell'INSERT, quindi non si
+  può materializzare la riga outbox *prima* del `SaveChanges`. → `BeginTransaction → SaveChanges (Id assegnato) →
+  Add riga outbox con l'Id → SaveChanges → Commit`. Le due INSERT committano insieme (crash prima del commit =
+  rollback di entrambe). Il `BookRepository` riceve una `Func<int, IntegrationEvent>` valutata con l'Id assegnato.
+  (Un `SaveChangesInterceptor` è pulito **solo** con chiavi client-generated; qui no → transazione esplicita.)
+- **Marcare `ProcessedAt` solo a successo.** Marcarlo dopo un semplice enqueue/relay (fire-and-forget)
+  reintrodurrebbe l'at-most-once: il processore esegue il lavoro e marca **solo** se è andato a buon fine →
+  at-least-once. Serve un consumer **idempotente** (lo snapshot è 1:1 col libro → rielaborare è sicuro).
+- **PITFALL TEST (il più costoso): un hosted service che polla in continuo + DB condiviso = flaky.** La
+  `WebApplicationFactory` è condivisa da tutta la collection e **avvia gli hosted service**. Un `OutboxDispatcher`
+  che polla ogni N ms sul DB condiviso: (a) **corre con `EnsureCreated`** allo startup → `Invalid object name
+  'OutboxMessages'` finché lo schema non c'è; (b) **interferisce fra i test** (processa righe di altri test,
+  `ResetDatabaseAsync` cancella mentre lui processa) → set di fallimenti **diverso a ogni run**. Il vecchio worker
+  [L21] non l'aveva perché era *event-driven* (lavorava solo all'enqueue del test). → **Separare l'unità di lavoro
+  (`OutboxProcessor.ProcessPendingAsync`, scoped) dal loop di hosting (`OutboxDispatcher : BackgroundService`)**:
+  in test si **disattiva l'hosted dispatcher** (si rimuove il descriptor `IHostedService`) e si **pilota il
+  processing esplicitamente** (`DrainOutboxAsync`) → deterministico, niente polling/timeout, niente interferenza.
+  Per testare anche il **loop di hosting reale** in modo deterministico: una factory **dedicata** (`DisableOutboxDispatcher
+  => false`) con **container isolato** (nessuna interferenza) e attesa dell'esito con **timeout generoso** (l'esito
+  *avverrà* in &lt;1s); la si tiene nella **collection serializzata** per non incrociare il listener OTel globale [L18].
+- **Flaky pre-esistente smascherato.** Il test OTel `CreateBook…InSameTrace` falliva ~2/3 (verificato anche su
+  `main`): lo span **server** ASP.NET Core si chiude *poco dopo* che il client riceve la risposta, a volte dopo lo
+  smontaggio del listener globale → non catturato. Non era una regressione dell'outbox, ma il lavoro extra sul
+  path di write ne aumentava la frequenza. → attendere lo span server (poll breve) **prima** di smontare il
+  listener, dentro il `using` (vedi anche [L18]).
+- **Parità DACPAC ↔ modello EF per l'indice filtrato.** L'indice `WHERE ProcessedAt IS NULL` va dichiarato anche
+  in EF (`HasIndex(...).HasFilter(...)`) così `EnsureCreated` (test) crea lo stesso oggetto del DACPAC (prod).
+
+**Debolezza voluta (→ PR-2):** consegna **mono-processo** in-process e dispatcher a **polling** (un solo
+processo; competing-consumers multi-istanza richiederebbe lock di riga `UPDLOCK/READPAST` o un broker). È il
+movente del broker **Azure Service Bus**: pubblicazione dietro la stessa astrazione + consumer disaccoppiato.
+
+**Soluzione:** vedi `Application/Outbox/` (`IntegrationEvent`, `PopularityEnrichmentRequested`),
+`Application/Interfaces/IPopularityEnricher.cs`, `Infrastructure/Outbox/` (`OutboxProcessor`, `OutboxDispatcher`,
+`OutboxMessageFactory`, `OutboxOptions`), `Infrastructure/Popularity/PopularityEnricher.cs`, la scrittura
+transazionale in `Infrastructure/Repositories/BookRepository.cs`, la registrazione in
+`Infrastructure/DependencyInjection.cs` (`AddOutboxProcessing`), `DrainOutboxAsync`/`DisableOutboxDispatcher` in
+`PlaygroundApiFactory` e i test in `tests/.../IntegrationTests/Outbox/` (`OutboxProcessingTests` +
+`OutboxDispatcherHostTests` per il loop reale) + `tests/.../Popularity/PopularityEnricherTests.cs`.
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
-using WebApiPlayground.Application.BackgroundProcessing;
 using WebApiPlayground.Application.Diagnostics;
 using WebApiPlayground.Application.DTOs;
 using WebApiPlayground.Application.Interfaces;
+using WebApiPlayground.Application.Outbox;
 using WebApiPlayground.Application.Querying;
 using WebApiPlayground.Domain.Entities;
 
@@ -12,19 +12,13 @@ namespace WebApiPlayground.Application.Services;
 public class BooksService : IBooksService
 {
     private readonly IBookRepository _repository;
-    private readonly IBackgroundTaskQueue<PopularityEnrichmentRequest> _enrichmentQueue;
     private readonly ILogger<BooksService> _logger;
 
-    public BooksService(
-        IBookRepository repository,
-        IBackgroundTaskQueue<PopularityEnrichmentRequest> enrichmentQueue,
-        ILogger<BooksService> logger)
+    public BooksService(IBookRepository repository, ILogger<BooksService> logger)
     {
         ArgumentNullException.ThrowIfNull(repository);
-        ArgumentNullException.ThrowIfNull(enrichmentQueue);
         ArgumentNullException.ThrowIfNull(logger);
         _repository = repository;
-        _enrichmentQueue = enrichmentQueue;
         _logger = logger;
     }
 
@@ -91,7 +85,11 @@ public class BooksService : IBooksService
             dto.Title, dto.AuthorId);
 
         var book = new Book { Title = dto.Title, AuthorId = dto.AuthorId };
-        var created = await _repository.CreateAsync(book);
+
+        // Transactional outbox: il libro e l'evento di arricchimento committano nella STESSA transazione
+        // (durevole, at-least-once). La factory riceve l'Id assegnato dall'INSERT. La chiamata esterna (lenta)
+        // la farà il dispatcher fuori dal path di scrittura. Vedi .claude/context/outbox.md.
+        var created = await _repository.CreateAsync(book, PopularityEnrichmentEvent);
 
         // Metrica di dominio: contatore dei libri creati con successo (serie temporale per dashboard/alert).
         activity?.SetTag("book.id", created.Id);
@@ -100,9 +98,6 @@ public class BooksService : IBooksService
         _logger.LogDebug(
             "Book entity persisted with ID {BookId}, author resolved as '{AuthorName}'",
             created.Id, created.Author?.FullName ?? "unknown");
-
-        // Arricchimento popolarità fuori dal path di scrittura: la chiamata esterna (lenta) la fa il worker.
-        EnqueuePopularityEnrichment(created.Id);
 
         return MapToDto(created);
     }
@@ -116,7 +111,9 @@ public class BooksService : IBooksService
         // Il token atteso (If-Match) viaggia in RowVersion: il repository lo usa come OriginalValue del
         // concurrency token, così l'UPDATE è condizionale (WHERE Id=@id AND RowVersion=@expectedVersion).
         var book = new Book { Id = id, Title = dto.Title, AuthorId = dto.AuthorId, RowVersion = expectedVersion };
-        var updated = await _repository.UpdateAsync(book);
+        // Titolo/autore possono cambiare → la popolarità va ricalcolata: l'evento è scritto in outbox nella
+        // stessa transazione dell'UPDATE (nessun evento se il libro non esiste o la versione è stale).
+        var updated = await _repository.UpdateAsync(book, PopularityEnrichmentEvent);
 
         if (updated is null)
         {
@@ -127,9 +124,6 @@ public class BooksService : IBooksService
         _logger.LogDebug(
             "Book {BookId} updated, author resolved as '{AuthorName}'",
             updated.Id, updated.Author?.FullName ?? "unknown");
-
-        // Titolo/autore possono essere cambiati → la popolarità va ricalcolata in background.
-        EnqueuePopularityEnrichment(updated.Id);
 
         return MapToDto(updated);
     }
@@ -170,19 +164,13 @@ public class BooksService : IBooksService
     }
 
     /// <summary>
-    /// Accoda (best-effort, non bloccante) l'arricchimento popolarità per un libro. Cattura il
-    /// <see cref="Activity.Current"/> così lo span del worker si aggancia alla trace di questa write
-    /// (correlazione oltre il confine async). Coda piena → si scarta loggando: la write resta veloce
-    /// (il drop è osservato come metrica nella coda). Vedi <c>.claude/context/background-processing.md</c>.
+    /// Factory dell'evento di integrazione di arricchimento popolarità per un libro. Cattura il traceparent
+    /// W3C corrente (<see cref="Activity.Current"/>) così lo span del consumer si aggancia alla trace di questa
+    /// write oltre il confine durevole dell'outbox. Passata al repository, che la valuta con l'Id assegnato e
+    /// scrive la riga outbox nella stessa transazione. Vedi <c>.claude/context/outbox.md</c>.
     /// </summary>
-    private void EnqueuePopularityEnrichment(int bookId)
-    {
-        var request = new PopularityEnrichmentRequest(bookId, Activity.Current?.Context ?? default);
-
-        if (!_enrichmentQueue.TryEnqueue(request))
-            _logger.LogWarning(
-                "Popularity enrichment queue is full — dropping enrichment for book {BookId}", bookId);
-    }
+    private static IntegrationEvent PopularityEnrichmentEvent(int bookId) =>
+        new PopularityEnrichmentRequested(bookId, Activity.Current?.Id);
 
     private static BookDto MapToDto(Book book) =>
         new(book.Id, book.Title, book.Author?.FullName ?? string.Empty) { Version = EncodeVersion(book.RowVersion) };

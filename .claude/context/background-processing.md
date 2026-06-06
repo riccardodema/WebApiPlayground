@@ -4,6 +4,12 @@
 pagina copre il processamento asincrono **in-process**, senza Outbox né broker (step 2). Pitfall in
 `.claude/lessons.md` [L21].
 
+> **Aggiornamento (step 2, PR-1):** il **flusso popolarità è migrato all'Outbox transazionale** — vedi
+> [outbox.md](outbox.md) e [L22]. Il `PopularityEnrichmentWorker` su canale è **superato** dal dispatcher
+> dell'outbox (durevole, at-least-once); la sua logica vive ora in `IPopularityEnricher`. Il **toolbox generico**
+> `IBackgroundTaskQueue<T>`/`ChannelBackgroundTaskQueue<T>`/`BackgroundQueueWorker<T>` resta come primitiva
+> riusabile (non più cablata alla popolarità). Le sezioni sotto descrivono il meccanismo a canale dello step 1.
+
 ## Perché
 
 `GET /books/{id}/popularity` chiama una dipendenza esterna (Open Library) — resiliente e cachata, ma a cache
@@ -94,14 +100,14 @@ stop vengono abbandonati → semantica **at-most-once** (vedi sotto).
   in background compare nella stessa trace della write (correlazione end-to-end oltre il confine async).
 - Metriche: `background.tasks.{enqueued,dropped,processed,failed}` (Meter custom, registrato in `AddApiObservability`).
 
-## La debolezza voluta → Outbox (step 2)
+## La debolezza voluta → Outbox (step 2) — **realizzata in PR-1**
 
-La coda è **in-memory** e l'enqueue **non è transazionale** con la write DB: gli item in coda si perdono al
-crash/restart, e la coda piena scarta. Semantica **at-most-once**. È accettabile qui perché il read normale è
-cache→live (fresco) e lo snapshot è solo fallback d'outage — un item perso degrada al più il fallback, non le
-letture. Questa debolezza è il **movente diretto** dello step 2: **Outbox pattern** (scrittura outbox nella stessa
-transazione del libro) + dispatcher + **Azure Service Bus** → arricchimento **at-least-once / durevole**.
-`BackgroundQueueWorker<T>` e `IBackgroundTaskQueue<T>` restano riusabili.
+La coda era **in-memory** e l'enqueue **non transazionale** con la write DB: item persi al crash/restart, drop su
+coda piena. Semantica **at-most-once**. Accettabile qui (read normale cache→live, snapshot solo fallback), ma è il
+**movente diretto** dello step 2: **Outbox pattern** (riga outbox nella stessa transazione del libro) + dispatcher
+→ arricchimento **at-least-once / durevole**. **PR-1 l'ha realizzato** (in-process, senza broker): vedi
+[outbox.md](outbox.md). Il **broker Azure Service Bus** arriva in PR-2. `IPopularityEnricher` riusa qui la logica
+di arricchimento; `BackgroundQueueWorker<T>`/`IBackgroundTaskQueue<T>` restano come toolbox generico riusabile.
 
 ## Test
 
