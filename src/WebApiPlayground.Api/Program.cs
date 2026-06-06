@@ -1,6 +1,7 @@
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Sinks.OpenTelemetry;
+using WebApiPlayground.Api.Configuration;
 using WebApiPlayground.Api.Extensions;
 using WebApiPlayground.Api.HealthChecks;
 using WebApiPlayground.Api.Http;
@@ -20,6 +21,10 @@ try
     Log.Information("Starting WebApiPlayground API");
 
     var builder = WebApplication.CreateBuilder(args);
+
+    // Fail-fast: fuori da Development (es. immagine in Production) rifiuta l'avvio se manca
+    // configurazione obbligatoria, elencando esattamente cosa impostare. In Development è un no-op.
+    StartupConfigurationValidator.ValidateRequiredConfiguration(builder.Configuration, builder.Environment);
 
     builder.Host.UseSerilog((context, services, configuration) =>
     {

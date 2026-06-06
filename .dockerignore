@@ -1,0 +1,39 @@
+# Igiene del build context dell'immagine API: contesto piccolo (build veloce) e —
+# soprattutto — nessun segreto locale dentro l'immagine.
+
+# Output di build
+**/bin/
+**/obj/
+artifacts/
+TestResults/
+[Tt]est[Rr]esult*/
+
+# Mai dentro l'immagine: la connection string di sviluppo (è gitignored, ma chi builda
+# in locale ce l'ha su disco). In container la config arriva da env (ConnectionStrings__Default).
+**/appsettings.Development.json
+**/appsettings.*.Development.json
+.env
+
+# Cartelle non necessarie all'app (l'immagine pubblica solo src/WebApiPlayground.Api)
+tests/
+database/
+infra/
+docs/
+.github/
+.azure/
+.claude/
+.tools/
+
+# Tooling / IDE / VCS
+.git/
+.gitignore
+.vs/
+.vscode/
+.idea/
+*.user
+*.md
+
+# File Docker stessi (non servono nel context)
+Dockerfile
+.dockerignore
+docker-compose*.yml

@@ -1,0 +1,71 @@
+# Stack di runtime locale completo: API + SQL Server + schema (DACPAC) seedato, con un
+# solo comando. Diverso da Testcontainers (che avvia il DB solo *per i test*): qui gira
+# l'app VERA, in container, contro dipendenze reali. Vedi .claude/context/docker.md.
+#
+#   cp .env.example .env
+#   docker compose up --build
+#   # API + Scalar:  http://localhost:8080/scalar/v1   (l'app gira in Development)
+#
+# Opzionali (off di default), via file di override:
+#   docker compose -f docker-compose.yml -f docker-compose.redis.yml  up   # cache L2 Redis
+#   docker compose -f docker-compose.yml -f docker-compose.aspire.yml up   # telemetria OTLP
+
+name: webapiplayground
+
+services:
+  # SQL Server. L'immagine è solo amd64: su Apple Silicon (arm64) gira in emulazione
+  # (platform: linux/amd64). Vedi .claude/lessons.md [L23].
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD in .env (vedi .env.example)}
+      MSSQL_PID: Developer
+    ports:
+      # Pubblica il DB sull'host solo per ispezionarlo con un client. L'API gli parla via rete
+      # interna (db:1433), quindi questa porta non serve allo stack. È configurabile perché 1433 è
+      # spesso già occupata da un SQL Server / Azure SQL Edge locale (vedi .claude/lessons.md [L23]).
+      - "${SQL_HOST_PORT:-1433}:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+    healthcheck:
+      # $$ = escape dell'interpolazione compose: la var la espande la shell del container.
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # Job one-shot: pubblica lo schema (DACPAC + seed) prima che l'API parta.
+  db-migrations:
+    build:
+      context: ./database
+    environment:
+      DB_CONNECTION: "Server=db;Database=PlaygroundDatabase;User ID=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: webapiplayground:latest
+    environment:
+      # Development: Scalar UI + auth BYPASS (no Entra) + niente HTTPS redirect. In Production
+      # l'app farebbe fail-fast senza AzureAd/connection string. Vedi .claude/lessons.md [L23].
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ConnectionStrings__Default: "Server=db;Database=PlaygroundDatabase;User ID=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;"
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      db-migrations:
+        condition: service_completed_successfully
+
+volumes:
+  mssql-data:

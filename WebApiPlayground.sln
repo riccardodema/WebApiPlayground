@@ -27,6 +27,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebApiPlayground.IacTests",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebApiPlayground.ArchitectureTests", "tests\WebApiPlayground.ArchitectureTests\WebApiPlayground.ArchitectureTests.csproj", "{7E9BA08D-63AF-4D33-88FB-120616DB4518}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebApiPlayground.DockerTests", "tests\WebApiPlayground.DockerTests\WebApiPlayground.DockerTests.csproj", "{766BEF4D-8AFE-4F19-A5A1-9B6AF915BFAF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -145,6 +147,18 @@ Global
 		{7E9BA08D-63AF-4D33-88FB-120616DB4518}.Release|x64.Build.0 = Release|Any CPU
 		{7E9BA08D-63AF-4D33-88FB-120616DB4518}.Release|x86.ActiveCfg = Release|Any CPU
 		{7E9BA08D-63AF-4D33-88FB-120616DB4518}.Release|x86.Build.0 = Release|Any CPU
+		{766BEF4D-8AFE-4F19-A5A1-9B6AF915BFAF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{766BEF4D-8AFE-4F19-A5A1-9B6AF915BFAF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{766BEF4D-8AFE-4F19-A5A1-9B6AF915BFAF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{766BEF4D-8AFE-4F19-A5A1-9B6AF915BFAF}.Debug|x64.Build.0 = Debug|Any CPU
+		{766BEF4D-8AFE-4F19-A5A1-9B6AF915BFAF}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{766BEF4D-8AFE-4F19-A5A1-9B6AF915BFAF}.Debug|x86.Build.0 = Debug|Any CPU
+		{766BEF4D-8AFE-4F19-A5A1-9B6AF915BFAF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{766BEF4D-8AFE-4F19-A5A1-9B6AF915BFAF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{766BEF4D-8AFE-4F19-A5A1-9B6AF915BFAF}.Release|x64.ActiveCfg = Release|Any CPU
+		{766BEF4D-8AFE-4F19-A5A1-9B6AF915BFAF}.Release|x64.Build.0 = Release|Any CPU
+		{766BEF4D-8AFE-4F19-A5A1-9B6AF915BFAF}.Release|x86.ActiveCfg = Release|Any CPU
+		{766BEF4D-8AFE-4F19-A5A1-9B6AF915BFAF}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -159,6 +173,7 @@ Global
 		{A4C1D4CD-2513-4F11-8CEC-66EC01291673} = {E0096E63-5207-411F-2649-837654E3C58A}
 		{566EF238-5542-4618-88F8-E3318290B8AD} = {CA000002-0000-0000-0000-000000000002}
 		{7E9BA08D-63AF-4D33-88FB-120616DB4518} = {CA000002-0000-0000-0000-000000000002}
+		{766BEF4D-8AFE-4F19-A5A1-9B6AF915BFAF} = {CA000002-0000-0000-0000-000000000002}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {87148C82-678D-410F-9D58-EA5255876FC1}
