@@ -16,10 +16,10 @@ using Xunit;
 namespace WebApiPlayground.IntegrationTests.Popularity;
 
 /// <summary>
-/// Arricchimento popolarità asincrono end-to-end: una <c>POST /books</c> accoda un work item, il
-/// <c>PopularityEnrichmentWorker</c> (hosted service reale, avviato dalla factory) chiama il client (stub) e
-/// persiste lo snapshot durevole. Si verifica anche il <b>fallback d'outage</b>: con la dipendenza giù e cache
-/// fredda, lo snapshot serve un 200 last-known-good invece del 503. Vedi <c>.claude/context/background-processing.md</c>.
+/// Arricchimento popolarità asincrono end-to-end: una <c>POST /books</c> scrive la riga outbox nella stessa
+/// transazione; il processore (guidato via <c>DrainOutboxAsync</c>) chiama il client (stub) e persiste lo snapshot
+/// durevole. Si verifica anche il <b>fallback d'outage</b>: con la dipendenza giù e cache fredda, lo snapshot serve
+/// un 200 last-known-good invece del 503. Vedi <c>.claude/context/outbox.md</c> e <c>background-processing.md</c>.
 /// </summary>
 [Collection("Integration")]
 public class PopularityEnrichmentTests : IAsyncLifetime
@@ -48,21 +48,11 @@ public class PopularityEnrichmentTests : IAsyncLifetime
         return author.Id;
     }
 
-    // Il worker è asincrono: si fa polling sullo store finché lo snapshot compare (o scade il timeout).
-    private async Task<BookPopularitySnapshot?> WaitForSnapshotAsync(int bookId, TimeSpan timeout)
+    private async Task<BookPopularitySnapshot?> GetSnapshotAsync(int bookId)
     {
-        var deadline = DateTimeOffset.UtcNow + timeout;
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            using var scope = _factory.Services.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<PlaygroundDbContext>();
-            var snapshot = await db.BookPopularitySnapshots.AsNoTracking().FirstOrDefaultAsync(s => s.BookId == bookId);
-            if (snapshot is not null)
-                return snapshot;
-            await Task.Delay(100);
-        }
-
-        return null;
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlaygroundDbContext>();
+        return await db.BookPopularitySnapshots.AsNoTracking().FirstOrDefaultAsync(s => s.BookId == bookId);
     }
 
     [Fact]
@@ -75,7 +65,12 @@ public class PopularityEnrichmentTests : IAsyncLifetime
         var created = await create.Content.ReadFromJsonAsync<BookDto>();
         Assert.NotNull(created);
 
-        var snapshot = await WaitForSnapshotAsync(created!.Id, TimeSpan.FromSeconds(10));
+        // La POST ha scritto la riga outbox nella stessa transazione del libro; il processore la consegna
+        // (chiama il client, persiste lo snapshot). Guidato esplicitamente → deterministico, niente attese.
+        var processed = await _factory.DrainOutboxAsync();
+        Assert.True(processed >= 1);
+
+        var snapshot = await GetSnapshotAsync(created!.Id);
 
         Assert.NotNull(snapshot);
         Assert.Equal(created.Id, snapshot!.BookId);
@@ -97,8 +92,9 @@ public class PopularityEnrichmentTests : IAsyncLifetime
         var created = await create.Content.ReadFromJsonAsync<BookDto>();
         Assert.NotNull(created);
 
-        // Aspetta che il worker (factory base, stub di successo) abbia persistito lo snapshot.
-        var snapshot = await WaitForSnapshotAsync(created!.Id, TimeSpan.FromSeconds(10));
+        // Processa l'outbox (factory base, stub di successo) → lo snapshot durevole è persistito.
+        await _factory.DrainOutboxAsync();
+        var snapshot = await GetSnapshotAsync(created!.Id);
         Assert.NotNull(snapshot);
 
         // Host separato con dipendenza giù e cache fredda (FusionCache per-host): live fallisce, ma lo snapshot

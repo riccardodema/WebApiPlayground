@@ -93,8 +93,17 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
   refresh periodico né SWR. Astrazione `IBackgroundTaskQueue<T>` in Application, Channel/host in Infrastructure
   (regola NetArchTest). Debolezza voluta (in-memory, at-most-once) = movente dell'Outbox. Vedi
   `.claude/context/background-processing.md`, `[L21]`.
-- ⬜ **Outbox pattern** + broker (**Azure Service Bus**): scrittura transazionale outbox →
+- 🚧 **Outbox pattern** + broker (**Azure Service Bus**): scrittura transazionale outbox →
   dispatcher → consumer. Il pezzo più "distributed systems".
+  - ✅ **PR-1 — Outbox transazionale (senza broker).** La write scrive libro + riga `OutboxMessages` nella
+    **stessa transazione** (transazione esplicita EF; chiave IDENTITY → factory evento valutata post-INSERT);
+    `OutboxProcessor` (unità di lavoro) separato dal loop `OutboxDispatcher`; consegna **at-least-once** durevole
+    in-process (`ProcessedAt` solo a successo, consumer idempotente, isolamento/`Attempts`/poison); logica
+    riusabile `IPopularityEnricher` (sostituisce il worker su canale per la popolarità). Vedi
+    `.claude/context/outbox.md`, `[L22]`.
+  - ⬜ **PR-2 — Broker Azure Service Bus (config-gated) + Bicep IaC.** Pubblicazione su ASB dietro
+    `IIntegrationEventPublisher` + consumer disaccoppiato che riusa `IPopularityEnricher`; modulo
+    `infra/modules/servicebus.bicep` (RBAC, no SAS); attivo solo se configurato (fallback al path in-process).
 
 ## Tier 5 — Meta / polish
 

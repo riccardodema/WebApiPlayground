@@ -10,6 +10,7 @@ public class PlaygroundDbContext : DbContext
     public DbSet<Book> Books { get; set; }
     public DbSet<Author> Authors { get; set; }
     public DbSet<BookPopularitySnapshot> BookPopularitySnapshots { get; set; }
+    public DbSet<OutboxMessage> OutboxMessages { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -66,6 +67,27 @@ public class PlaygroundDbContext : DbContext
                 .HasForeignKey<BookPopularitySnapshot>(s => s.BookId)
                 .HasConstraintName("FK_BookPopularitySnapshots_Books")
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<OutboxMessage>(entity =>
+        {
+            entity.ToTable("OutboxMessages");
+
+            // PK store-generated (IDENTITY): dà anche l'ordine FIFO di consegna.
+            entity.HasKey(m => m.Id);
+
+            entity.Property(m => m.Type)
+                .HasMaxLength(200)
+                .IsUnicode(false)   // VARCHAR(200)
+                .IsRequired();
+
+            entity.Property(m => m.Payload).IsRequired();   // NVARCHAR(MAX) JSON
+
+            // Indice filtrato: il poll del dispatcher scandisce solo i messaggi non ancora processati.
+            // Allineato al DACPAC (IX_OutboxMessages_Unprocessed) così EnsureCreated nei test crea lo stesso oggetto.
+            entity.HasIndex(m => m.Id)
+                .HasDatabaseName("IX_OutboxMessages_Unprocessed")
+                .HasFilter("[ProcessedAt] IS NULL");
         });
 
         base.OnModelCreating(modelBuilder);

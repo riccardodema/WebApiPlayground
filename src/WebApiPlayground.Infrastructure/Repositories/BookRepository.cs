@@ -3,8 +3,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using WebApiPlayground.Application.Concurrency;
 using WebApiPlayground.Application.Interfaces;
+using WebApiPlayground.Application.Outbox;
 using WebApiPlayground.Application.Querying;
 using WebApiPlayground.Domain.Entities;
+using WebApiPlayground.Infrastructure.Outbox;
 using WebApiPlayground.Infrastructure.Persistence;
 
 namespace WebApiPlayground.Infrastructure.Repositories;
@@ -12,11 +14,13 @@ namespace WebApiPlayground.Infrastructure.Repositories;
 public class BookRepository : IBookRepository
 {
     private readonly PlaygroundDbContext _context;
+    private readonly TimeProvider _timeProvider;
     private readonly ILogger<BookRepository> _logger;
 
-    public BookRepository(PlaygroundDbContext context, ILogger<BookRepository> logger)
+    public BookRepository(PlaygroundDbContext context, TimeProvider timeProvider, ILogger<BookRepository> logger)
     {
         _context = context;
+        _timeProvider = timeProvider;
         _logger = logger;
     }
 
@@ -80,7 +84,7 @@ public class BookRepository : IBookRepository
         return book;
     }
 
-    public async Task<Book> CreateAsync(Book book)
+    public async Task<Book> CreateAsync(Book book, Func<int, IntegrationEvent> outboxEvent)
     {
         _logger.LogDebug(
             "Inserting book into database — Title: '{BookTitle}', AuthorId: {AuthorId}",
@@ -88,9 +92,16 @@ public class BookRepository : IBookRepository
 
         _context.Books.Add(book);
 
+        // Transactional outbox: libro + riga outbox committano insieme. L'Id è IDENTITY (noto solo dopo
+        // l'INSERT), quindi prima si salva il libro, poi si materializza l'evento con l'Id appena assegnato,
+        // il tutto in un'unica transazione esplicita → atomicità (crash prima del commit = rollback di entrambi).
+        await using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
             await _context.SaveChangesAsync();
+            EnqueueOutbox(outboxEvent(book.Id));
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
         }
         catch (DbUpdateException ex)
         {
@@ -111,7 +122,7 @@ public class BookRepository : IBookRepository
         return created;
     }
 
-    public async Task<Book?> UpdateAsync(Book book)
+    public async Task<Book?> UpdateAsync(Book book, Func<int, IntegrationEvent> outboxEvent)
     {
         _logger.LogDebug("Looking up book {BookId} for update", book.Id);
 
@@ -119,6 +130,7 @@ public class BookRepository : IBookRepository
 
         if (existing is null)
         {
+            // Nessun libro → niente da aggiornare e nessun evento outbox da scrivere.
             _logger.LogDebug("Book {BookId} not found in database — update skipped", book.Id);
             return null;
         }
@@ -131,9 +143,15 @@ public class BookRepository : IBookRepository
         // dal FindAsync e l'UPDATE non rileverebbe mai un conflitto. Stale → 0 righe → DbUpdateConcurrencyException.
         _context.Entry(existing).Property(b => b.RowVersion).OriginalValue = book.RowVersion;
 
+        // Transactional outbox: l'UPDATE del libro e la riga outbox committano insieme (o rollback insieme).
+        // Se la versione è stale il SaveChanges lancia → rollback → nessun evento scritto.
+        await using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
             await _context.SaveChangesAsync();
+            EnqueueOutbox(outboxEvent(existing.Id));
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
         }
         catch (DbUpdateConcurrencyException ex)
         {
@@ -156,6 +174,10 @@ public class BookRepository : IBookRepository
         _logger.LogDebug("Book {BookId} updated in database: '{BookTitle}'", updated.Id, updated.Title);
         return updated;
     }
+
+    // Aggiunge la riga outbox al change tracker: verrà persistita nel SaveChanges della transazione corrente.
+    private void EnqueueOutbox(IntegrationEvent message) =>
+        _context.OutboxMessages.Add(OutboxMessageFactory.Create(message, _timeProvider.GetUtcNow()));
 
     public async Task<bool> DeleteAsync(int id, byte[] expectedVersion)
     {

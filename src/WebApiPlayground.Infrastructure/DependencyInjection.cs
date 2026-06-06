@@ -2,13 +2,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using WebApiPlayground.Application.BackgroundProcessing;
 using WebApiPlayground.Application.Idempotency;
 using WebApiPlayground.Application.Interfaces;
-using WebApiPlayground.Infrastructure.BackgroundProcessing;
 using WebApiPlayground.Infrastructure.Caching;
 using WebApiPlayground.Infrastructure.HealthChecks;
 using WebApiPlayground.Infrastructure.Idempotency;
+using WebApiPlayground.Infrastructure.Outbox;
 using WebApiPlayground.Infrastructure.Persistence;
 using WebApiPlayground.Infrastructure.Popularity;
 using WebApiPlayground.Infrastructure.Repositories;
@@ -28,9 +27,12 @@ public static class DependencyInjection
         services.AddScoped<IBookRepository, BookRepository>();
         services.AddScoped<IBookPopularitySnapshotRepository, BookPopularitySnapshotRepository>();
 
+        // Logica di arricchimento riusabile dal dispatcher dell'outbox (e domani dal consumer ASB).
+        services.AddScoped<IPopularityEnricher, PopularityEnricher>();
+
         AddCaching(services, configuration);
         AddIdempotency(services, configuration);
-        AddBackgroundProcessing(services, configuration);
+        AddOutboxProcessing(services, configuration);
 
         // Dipendenza esterna (Open Library) come HttpClient tipizzato + pipeline di resilienza Polly esplicita
         // (retry/circuit-breaker/timeout). L'astrazione IBookPopularityClient è in Application; il concreto e
@@ -118,18 +120,18 @@ public static class DependencyInjection
     }
 
     /// <summary>
-    /// Processamento asincrono in-process: la coda <see cref="IBackgroundTaskQueue{T}"/> è un
-    /// <b>singleton</b> (producer e consumer devono condividere la stessa istanza) su <c>Channel</c> bounded
-    /// (open-generic → riusabile per qualunque work item). Il <see cref="PopularityEnrichmentWorker"/> è il
-    /// consumer (hosted service) che arricchisce la popolarità fuori dal path di scrittura. L'astrazione vive
-    /// in Application, il meccanismo qui (regola NetArchTest). Vedi <c>.claude/context/background-processing.md</c>.
+    /// Outbox transazionale: l'evento di integrazione è scritto nella stessa transazione della write di
+    /// business (nel repository); il <see cref="OutboxDispatcher"/> (hosted service) polla i messaggi non
+    /// processati e li consegna in-process tramite <see cref="IPopularityEnricher"/>, marcandoli solo a
+    /// successo (at-least-once durevole). In PR-2 il dispatcher pubblicherà su Azure Service Bus dietro la
+    /// stessa astrazione. Vedi <c>.claude/context/outbox.md</c>.
     /// </summary>
-    private static void AddBackgroundProcessing(IServiceCollection services, IConfiguration configuration)
+    private static void AddOutboxProcessing(IServiceCollection services, IConfiguration configuration)
     {
-        services.Configure<BackgroundProcessingOptions>(
-            configuration.GetSection(BackgroundProcessingOptions.SectionName));
-
-        services.AddSingleton(typeof(IBackgroundTaskQueue<>), typeof(ChannelBackgroundTaskQueue<>));
-        services.AddHostedService<PopularityEnrichmentWorker>();
+        services.Configure<OutboxOptions>(configuration.GetSection(OutboxOptions.SectionName));
+        // L'unità di lavoro (scoped) è separata dal loop di hosting: così i test la guidano deterministicamente
+        // (un ProcessPendingAsync esplicito) senza il polling continuo del dispatcher.
+        services.AddScoped<OutboxProcessor>();
+        services.AddHostedService<OutboxDispatcher>();
     }
 }

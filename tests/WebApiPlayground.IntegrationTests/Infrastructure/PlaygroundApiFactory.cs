@@ -5,9 +5,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Testcontainers.MsSql;
 using WebApiPlayground.Application.Caching;
 using WebApiPlayground.Application.Popularity;
+using WebApiPlayground.Infrastructure.Outbox;
 using WebApiPlayground.Infrastructure.Persistence;
 using WebApiPlayground.Infrastructure.Popularity;
 using Xunit;
@@ -18,6 +20,13 @@ namespace WebApiPlayground.IntegrationTests.Infrastructure;
 public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private readonly MsSqlContainer _sqlContainer = new MsSqlBuilder().Build();
+
+    /// <summary>
+    /// Se <c>true</c> (default) l'<c>OutboxDispatcher</c> hosted è rimosso e il processing si guida via
+    /// <see cref="DrainOutboxAsync"/> (deterministico, niente polling). La sottoclasse
+    /// <c>DispatcherEnabledApiFactory</c> lo riattiva (container isolato) per testare il loop di hosting reale.
+    /// </summary>
+    protected virtual bool DisableOutboxDispatcher => true;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -40,6 +49,18 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
 
             services.AddDbContext<PlaygroundDbContext>(options =>
                 options.UseSqlServer(_sqlContainer.GetConnectionString()));
+
+            // Di default niente OutboxDispatcher in background nei test: il polling continuo su un DB condiviso
+            // fra tutta la collection interferirebbe fra i test (e correrebbe con EnsureCreated allo startup). Il
+            // processing si guida esplicitamente via DrainOutboxAsync → deterministico. La sottoclasse dedicata
+            // (DispatcherEnabledApiFactory) lo RIATTIVA, su un container isolato, per testare il loop reale.
+            if (DisableOutboxDispatcher)
+            {
+                var dispatcher = services.SingleOrDefault(
+                    d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(OutboxDispatcher));
+                if (dispatcher is not null)
+                    services.Remove(dispatcher);
+            }
 
             // Aggiunge il controller di test (ThrowingTestController) alla pipeline reale,
             // per esercitare GlobalExceptionHandler end-to-end senza endpoint fittizi in produzione.
@@ -87,6 +108,18 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         await db.Database.EnsureCreatedAsync();
     }
 
+    /// <summary>
+    /// Processa l'outbox in modo deterministico (un batch) e ritorna quanti messaggi sono stati esaminati.
+    /// Nei test sostituisce il polling del dispatcher (disattivato): POST → DrainOutboxAsync() → asserzioni,
+    /// senza attese/timeout. Vedi <c>.claude/context/outbox.md</c>.
+    /// </summary>
+    public async Task<int> DrainOutboxAsync()
+    {
+        using var scope = Services.CreateScope();
+        var processor = scope.ServiceProvider.GetRequiredService<OutboxProcessor>();
+        return await processor.ProcessPendingAsync(CancellationToken.None);
+    }
+
     public new async Task DisposeAsync()
     {
         await _sqlContainer.DisposeAsync();
@@ -101,6 +134,9 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         await db.Database.ExecuteSqlRawAsync("DELETE FROM BookPopularitySnapshots");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM Books");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM Authors");
+        // Outbox: nessuna FK verso le altre tabelle, ma va svuotata col DB per isolare i test fra loro
+        // (un messaggio non processato di un test non deve essere consegnato in quello successivo).
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM OutboxMessages");
 
         // I test fanno seed direttamente sul DB (bypassando l'API), quindi non passano per
         // l'invalidazione del decoratore di caching: senza questo flush la cache L1 — condivisa
