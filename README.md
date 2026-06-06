@@ -323,10 +323,12 @@ command**. They're complementary to Testcontainers, which stays exactly as it is
 change how tests run.
 
 - **Multi-stage image, chiseled & non-root.** Build on the .NET 10 SDK image (csproj copied first so the
-  NuGet `restore` layer stays cached), run on **`aspnet:10.0-noble-chiseled`** — a distroless-style image
-  with **no shell/package manager**, running as the **non-root `app`** user on port **8080**. Smaller attack
-  surface, faster pulls. (No curl-based `HEALTHCHECK`: chiseled has no shell, so liveness is an external HTTP
-  probe.)
+  NuGet `restore` layer stays cached), run on **`aspnet:10.0-noble-chiseled-extra`** — a distroless-style
+  image with **no shell/package manager**, running as the **non-root `app`** user on port **8080**. Smaller
+  attack surface, faster pulls. (No curl-based `HEALTHCHECK`: chiseled has no shell, so liveness is an
+  external HTTP probe.) The `-extra` variant bundles **ICU** — required because `Microsoft.Data.SqlClient`
+  doesn't support .NET's Globalization Invariant Mode (the plain chiseled image starts but every DB query
+  fails).
 - **`docker compose up` = full local stack.** API + **SQL Server** + the **schema published from the DACPAC**
   (a one-shot `db-migrations` service that reuses the same `deploy.sh` as CI — "DACPAC is the source of
   truth"), wired with health checks and ordered startup (`api` waits for the DB to be *healthy* and the
@@ -393,17 +395,81 @@ Azure uses **OIDC federated credentials** (no long-lived secrets). Setup details
 
 ## Run locally
 
+Two ways: containerized (nothing to install but Docker) or with the .NET SDK against your own SQL Server.
+
+### Option A — the whole stack with Docker Compose (recommended for a first run)
+
+Everything runs in containers, so you **don't need .NET or SQL Server installed** — just **Docker Desktop**
+(Compose v2 is bundled). Great for trying the API end to end on a fresh machine.
+
+1. **Clone the repo**
+
+   ```bash
+   git clone https://github.com/riccardodema/WebApiPlayground.git
+   cd WebApiPlayground
+   ```
+
+2. **Create your `.env`** — it holds the SQL Server `sa` password and is git-ignored (only `.env.example`
+   is committed):
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Edit `MSSQL_SA_PASSWORD` if you want (it must be a *strong* password: 8+ chars, 3 of upper/lower/digit/
+   symbol). If port **1433** is already used on your machine (a local SQL Server / Azure SQL Edge),
+   uncomment `SQL_HOST_PORT=14330` in `.env`.
+
+3. **Start it** (the first run pulls the SQL Server image and builds the app image — a few minutes; later
+   runs are fast):
+
+   ```bash
+   docker compose up --build        # add -d to run in the background
+   ```
+
+   Compose starts SQL Server, **waits until it's healthy**, runs the one-shot **`db-migrations`** service
+   that publishes the schema + seed data from the DACPAC, **then** starts the API.
+
+4. **Use it** — the API runs in **Development**, so the dev auth bypass is on (no token needed):
+
+   - Scalar UI (try endpoints from the browser): <http://localhost:8080/scalar/v1>
+   - Readiness probe (verifies DB connectivity): `curl http://localhost:8080/health/ready` → `200`
+   - A real request: `curl "http://localhost:8080/api/v1/books"` → the seeded books
+
+5. **Stop / reset**
+
+   ```bash
+   docker compose down       # stop & remove the containers (keeps the DB data volume)
+   docker compose down -v    # also wipe the DB volume — clean slate next time
+   ```
+
+**Iterate while developing**
+
+- After changing code, rebuild and restart: `docker compose up --build`.
+- Follow logs: `docker compose logs -f api` (or `db`, `db-migrations`).
+- Optional extras, off by default (compose override files):
+
+  ```bash
+  docker compose -f docker-compose.yml -f docker-compose.redis.yml  up   # Redis L2 cache + backplane
+  docker compose -f docker-compose.yml -f docker-compose.aspire.yml up   # OTLP telemetry → http://localhost:18888
+  ```
+
+**Troubleshooting**
+
+- *`port is already allocated` on 1433* — a local SQL Server is using it; set `SQL_HOST_PORT=14330` in `.env`
+  (the API reaches the DB over the internal compose network, so this only changes the host-side port).
+- *Apple Silicon (arm64)* — the SQL Server image is amd64-only and runs under emulation
+  (`platform: linux/amd64`); the first start is a little slower.
+- *Running the image in Production* — it intentionally **fails fast** unless you pass
+  `ConnectionStrings__Default` and `AzureAd__ClientId/TenantId/Audience`, listing exactly what's missing.
+
+### Option B — with the .NET SDK (your own SQL Server)
+
 ```bash
 # DB connection goes in src/WebApiPlayground.Api/appsettings.Development.json (git-ignored)
 dotnet run --project src/WebApiPlayground.Api/WebApiPlayground.Api.csproj
 # Scalar UI:   http://localhost:5242/scalar/v1
 # OpenAPI doc: http://localhost:5242/openapi/v1.json
-```
-
-Or run the whole stack (API + SQL + schema) in containers — no local SQL Server needed:
-
-```bash
-cp .env.example .env && docker compose up --build   # Scalar UI: http://localhost:8080/scalar/v1
 ```
 
 From **VS Code press F5** (`Debug (http)`): it builds, runs and opens the browser on
