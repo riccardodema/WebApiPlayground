@@ -4,16 +4,11 @@
 [![PR Validation](https://github.com/riccardodema/WebApiPlayground/actions/workflows/pr-validation.yml/badge.svg)](https://github.com/riccardodema/WebApiPlayground/actions/workflows/pr-validation.yml)
 ![.NET](https://img.shields.io/badge/.NET-10-512BD4)
 
-A small CRUD Web API (books/authors) used as a **production-like playground**: the
-interesting part is not the domain but the engineering around it — Clean Architecture,
-a versioned database, structured logging, a full test pyramid and CI/CD implemented on
-**both Azure DevOps and GitHub Actions**.
-
-> **About this project.** It's also a proof-of-concept for using **Claude as a coding
-> copilot wired into a real GitHub workflow** — protected `main` with PR-based merges,
-> MCP integrations (e.g. live SQL Server access), and CI/CD — aiming for a development
-> loop that is modern and fast yet safe and detail-oriented (multi-step checks before
-> any sensitive or irreversible action, no secrets in the repo).
+A deliberately small CRUD Web API (books/authors) whose point isn't the domain but the
+**engineering around it** — the patterns a real .NET Web API needs in production: Clean
+Architecture (layering enforced by tests), caching, idempotency, rate limiting, resilience,
+observability and a transactional outbox, each implemented end-to-end and explained. Plus a
+versioned database, a full test pyramid, and CI/CD on **both Azure DevOps and GitHub Actions**.
 
 ## Architecture
 
@@ -483,6 +478,12 @@ unconfigured the API runs with a development auth bypass (see [auth.md](.claude/
 only be merged after the **PR Validation** check (`validate / build-test`) is green
 and the branch is up to date. History is kept linear (squash/rebase), force-pushes
 and branch deletion are disabled.
+
+The project also doubles as a proof-of-concept for an **AI-assisted workflow**: Claude as a
+coding copilot wired into this real GitHub setup — MCP integrations (e.g. live SQL Server
+access) on top of the same PR + CI/CD gates above — aiming for a loop that is fast yet safe
+and detail-oriented (multi-step checks before any sensitive or irreversible action, no
+secrets in the repo).
 
 ## Repository layout
 
