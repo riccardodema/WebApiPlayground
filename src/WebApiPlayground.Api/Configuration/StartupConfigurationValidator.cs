@@ -21,6 +21,9 @@ public static class StartupConfigurationValidator
         ("AzureAd:ClientId", "autenticazione Microsoft Entra ID"),
         ("AzureAd:TenantId", "autenticazione Microsoft Entra ID"),
         ("AzureAd:Audience", "autenticazione Microsoft Entra ID"),
+        // Trasporto dell'outbox: in Production il broker è il percorso reale (no fallback in-process). Si richiede
+        // il namespace (managed identity, no SAS) — non la ConnectionString, che è solo per emulatore/locale.
+        ("ServiceBus:FullyQualifiedNamespace", "trasporto outbox su Azure Service Bus (managed identity)"),
     ];
 
     /// <summary>

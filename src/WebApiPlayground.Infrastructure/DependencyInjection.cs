@@ -4,10 +4,12 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using WebApiPlayground.Application.Idempotency;
 using WebApiPlayground.Application.Interfaces;
+using WebApiPlayground.Application.Outbox;
 using WebApiPlayground.Infrastructure.Caching;
 using WebApiPlayground.Infrastructure.HealthChecks;
 using WebApiPlayground.Infrastructure.Idempotency;
 using WebApiPlayground.Infrastructure.Outbox;
+using WebApiPlayground.Infrastructure.Outbox.ServiceBus;
 using WebApiPlayground.Infrastructure.Persistence;
 using WebApiPlayground.Infrastructure.Popularity;
 using WebApiPlayground.Infrastructure.Repositories;
@@ -122,9 +124,21 @@ public static class DependencyInjection
     /// <summary>
     /// Outbox transazionale: l'evento di integrazione è scritto nella stessa transazione della write di
     /// business (nel repository); il <see cref="OutboxDispatcher"/> (hosted service) polla i messaggi non
-    /// processati e li consegna in-process tramite <see cref="IPopularityEnricher"/>, marcandoli solo a
-    /// successo (at-least-once durevole). In PR-2 il dispatcher pubblicherà su Azure Service Bus dietro la
-    /// stessa astrazione. Vedi <c>.claude/context/outbox.md</c>.
+    /// processati e li <b>pubblica</b> tramite <see cref="IIntegrationEventPublisher"/>, marcandoli solo a
+    /// successo (at-least-once durevole).
+    ///
+    /// <para>Il <b>trasporto</b> è scelto qui in base alla config (come Redis/OTLP). Azure Service Bus è il
+    /// percorso <b>reale</b> (docker-compose con emulatore e Production con managed identity); l'in-process è solo
+    /// un <b>fallback per il dev offline</b> (bare <c>dotnet run</c> senza broker):</para>
+    /// <list type="bullet">
+    ///   <item><b>se <c>ServiceBus</c> è configurato</b> → publisher Azure Service Bus + consumer disaccoppiato:
+    ///   l'outbox pubblica sul broker, un hosted service riceve e arricchisce fuori dal path di write (PR-2);</item>
+    ///   <item><b>altrimenti</b> → <see cref="InProcessIntegrationEventPublisher"/>: l'evento è gestito subito
+    ///   in-process (nessuna dipendenza esterna). Fuori da Development il broker è <b>obbligatorio</b> (fail-fast
+    ///   in <c>StartupConfigurationValidator</c>), quindi questo fallback vale solo in Development.</item>
+    /// </list>
+    /// In entrambi i casi la logica di gestione vive in un unico <see cref="IntegrationEventHandler"/> (riusa
+    /// <see cref="IPopularityEnricher"/>). Vedi <c>.claude/context/outbox.md</c>.
     /// </summary>
     private static void AddOutboxProcessing(IServiceCollection services, IConfiguration configuration)
     {
@@ -133,5 +147,19 @@ public static class DependencyInjection
         // (un ProcessPendingAsync esplicito) senza il polling continuo del dispatcher.
         services.AddScoped<OutboxProcessor>();
         services.AddHostedService<OutboxDispatcher>();
+
+        // Routing+esecuzione condiviso dai due trasporti (in-process e consumer ASB). Scoped: enricher/DbContext
+        // freschi per ogni evento gestito.
+        services.AddScoped<IntegrationEventHandler>();
+
+        // Trasporto config-gated: Azure Service Bus se configurato, altrimenti consegna in-process (default).
+        services.Configure<ServiceBusOptions>(configuration.GetSection(ServiceBusOptions.SectionName));
+        var serviceBusOptions = configuration.GetSection(ServiceBusOptions.SectionName).Get<ServiceBusOptions>()
+                                ?? new ServiceBusOptions();
+
+        if (serviceBusOptions.IsConfigured)
+            services.AddServiceBusTransport();
+        else
+            services.AddScoped<IIntegrationEventPublisher, InProcessIntegrationEventPublisher>();
     }
 }

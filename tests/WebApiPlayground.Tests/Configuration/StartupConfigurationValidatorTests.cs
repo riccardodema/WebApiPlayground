@@ -20,6 +20,7 @@ public class StartupConfigurationValidatorTests
         "AzureAd:ClientId",
         "AzureAd:TenantId",
         "AzureAd:Audience",
+        "ServiceBus:FullyQualifiedNamespace",
     ];
 
     [Fact]
@@ -40,6 +41,7 @@ public class StartupConfigurationValidatorTests
         Assert.Contains("AzureAd__ClientId", ex.Message);
         Assert.Contains("AzureAd__TenantId", ex.Message);
         Assert.Contains("AzureAd__Audience", ex.Message);
+        Assert.Contains("ServiceBus__FullyQualifiedNamespace", ex.Message);
     }
 
     [Fact]
@@ -51,6 +53,7 @@ public class StartupConfigurationValidatorTests
             ["AzureAd:ClientId"] = "00000000-0000-0000-0000-000000000000",
             ["AzureAd:TenantId"] = "11111111-1111-1111-1111-111111111111",
             ["AzureAd:Audience"] = "api://playground",
+            ["ServiceBus:FullyQualifiedNamespace"] = "sb-webapiplay-prod-abc123.servicebus.windows.net",
         });
 
         var exception = Record.Exception(

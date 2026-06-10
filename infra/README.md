@@ -17,7 +17,8 @@ infra/
 ├── main.prod.bicepparam       # parametri ambiente prod
 ├── modules/
 │   ├── keyvault.bicep         # Key Vault (RBAC, soft-delete, purge protection, firewall, diagnostics)
-│   └── monitoring.bicep       # Log Analytics workspace (destinazione degli audit log)
+│   ├── monitoring.bicep       # Log Analytics workspace (destinazione degli audit log)
+│   └── servicebus.bicep       # Service Bus namespace + coda (trasporto outbox, PR-2 — AAD-only, RBAC, no SAS)
 ├── docs/
 │   └── monitoring.md          # guida: a cosa serve il monitoring/diagnostics del Key Vault
 ├── tests/
@@ -37,7 +38,8 @@ infra/
 | **Firewall default-deny** | `networkAcls.defaultAction = 'Deny'` + bypass per i servizi Azure trusted. Aggiungi IP/CIDR con il parametro `allowedIpAddresses` (o un Private Endpoint) per l'accesso amministrativo. |
 | **Nessun secret nell'IaC** | L'IaC crea solo il vault e gli accessi RBAC. Il **valore** della connection string è impostato fuori dall'IaC → nessun segreto transita per i deployment ARM né finisce nel repo. |
 | **Monitoring/audit attivo** | Un Log Analytics workspace + diagnostic settings inviano gli **AuditEvent** del vault (chi accede ai secret). Attivo di default (`enableMonitoring`), spegnibile per azzerare i costi. Vedi [docs/monitoring.md](docs/monitoring.md). |
-| **Naming deterministico** | Nome KV globale-unico ≤24 char con token da `uniqueString(sub, rg)`: stesso input → stesso nome → idempotente. |
+| **Service Bus AAD-only** | Namespace Standard + coda per l'outbox (PR-2): `disableLocalAuth: true` (**niente SAS**), RBAC data-plane least-privilege (Data Sender + Receiver sull'ambito **coda**, non Owner). L'app si autentica con managed identity. Attivo di default (`enableServiceBus`), spegnibile (SKU Standard a costo fisso). Vedi [sezione sotto](#service-bus--trasporto-delloutbox-pr-2). |
+| **Naming deterministico** | Nomi globale-unici con token da `uniqueString(sub, rg)` (KV ≤24 char, SB namespace ≤50): stesso input → stesso nome → idempotente. |
 
 ## Prerequisiti
 
@@ -149,6 +151,28 @@ az keyvault secret set \
 
 > Il firewall è **default-deny**: per scrivere il secret devi essere su un IP consentito
 > (`allowedIpAddresses`), dietro un Private Endpoint, o eseguire da un contesto Azure trusted.
+
+## Service Bus — trasporto dell'outbox (PR-2)
+
+Il modulo [`modules/servicebus.bicep`](modules/servicebus.bicep) crea un **namespace Service Bus** (SKU Standard) e
+una **coda** (`popularity-enrichment`) usata come trasporto dell'outbox: l'app pubblica gli eventi di integrazione
+e un consumer disaccoppiato li elabora (vedi [`.claude/context/outbox.md`](../.claude/context/outbox.md), sez. PR-2).
+
+| Scelta | Perché |
+|---|---|
+| **AAD-only** (`disableLocalAuth: true`) | Niente connection string SAS: l'app si autentica con **managed identity** (`DefaultAzureCredential`). Stesso principio "no segreti" del Key Vault. |
+| **RBAC sull'ambito coda** | Least-privilege: l'app riceve *Azure Service Bus Data Sender* (pubblica) + *Data Receiver* (consuma), **non** Owner. Assegnazioni condizionali (saltate se `appPrincipalId` è vuoto) e idempotenti (`name = guid(...)`). |
+| **Dead-lettering** | `maxDeliveryCount` + `deadLetteringOnMessageExpiration`: un messaggio "poison" finisce in dead-letter (diagnostica) invece di sparire o ciclare all'infinito. Coerente col consumer **idempotente** lato app. |
+| **Toggle `enableServiceBus`** | Lo SKU Standard ha un costo fisso: spegnibile su ambienti non-live (come `enableMonitoring`). ⚠️ Fuori da Development l'app **richiede** `ServiceBus__FullyQualifiedNamespace` (fail-fast allo startup): il fallback in-process vale **solo in Development** → spegnilo solo dove l'app non gira o gira in Development. |
+
+L'app si collega passando il **FQDN** in output (`serviceBusFullyQualifiedNamespace`) all'app setting
+`ServiceBus__FullyQualifiedNamespace` (+ `ServiceBus__QueueName`): nessuna connection string, auth via managed
+identity. In locale/test si usa invece l'**emulatore** ufficiale (connection string SAS), non questo namespace.
+
+> ⚠️ **Stato:** il modulo è **scritto e validato** con `bicep build` + test IaC (`ServiceBusModuleTests`) e provato
+> **end-to-end con l'emulatore** ASB (vedi i test di integrazione), ma — finché non esiste un profilo/subscription
+> Azure — **non è ancora stato deployato né verificato con `what-if`** contro un namespace reale. È un passo da fare
+> alla creazione dell'account (insieme al deploy del Key Vault e al config provider).
 
 ## Integrazione con l'App Service (passo successivo)
 

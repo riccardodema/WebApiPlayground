@@ -93,7 +93,7 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
   refresh periodico né SWR. Astrazione `IBackgroundTaskQueue<T>` in Application, Channel/host in Infrastructure
   (regola NetArchTest). Debolezza voluta (in-memory, at-most-once) = movente dell'Outbox. Vedi
   `.claude/context/background-processing.md`, `[L21]`.
-- 🚧 **Outbox pattern** + broker (**Azure Service Bus**): scrittura transazionale outbox →
+- ✅ **Outbox pattern** + broker (**Azure Service Bus**): scrittura transazionale outbox →
   dispatcher → consumer. Il pezzo più "distributed systems".
   - ✅ **PR-1 — Outbox transazionale (senza broker).** La write scrive libro + riga `OutboxMessages` nella
     **stessa transazione** (transazione esplicita EF; chiave IDENTITY → factory evento valutata post-INSERT);
@@ -101,9 +101,20 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
     in-process (`ProcessedAt` solo a successo, consumer idempotente, isolamento/`Attempts`/poison); logica
     riusabile `IPopularityEnricher` (sostituisce il worker su canale per la popolarità). Vedi
     `.claude/context/outbox.md`, `[L22]`.
-  - ⬜ **PR-2 — Broker Azure Service Bus (config-gated) + Bicep IaC.** Pubblicazione su ASB dietro
-    `IIntegrationEventPublisher` + consumer disaccoppiato che riusa `IPopularityEnricher`; modulo
-    `infra/modules/servicebus.bicep` (RBAC, no SAS); attivo solo se configurato (fallback al path in-process).
+  - ✅ **PR-2 — Broker Azure Service Bus + Bicep IaC.** Trasporto astratto `IIntegrationEventPublisher`: ASB è il
+    percorso **reale** (docker-compose con emulatore + Production con managed identity), l'in-process resta solo
+    come fallback per il bare `dotnet run` offline (fail-fast su `ServiceBus:FullyQualifiedNamespace` fuori da
+    Development). Il `OutboxProcessor` **pubblica** invece di arricchire (`ProcessedAt` = handoff durevole al
+    broker); consumer disaccoppiato `ServiceBusIntegrationEventConsumer` (settlement manuale, at-least-once lato
+    broker, dead-letter, idempotente, retry di start) che riusa `IntegrationEventHandler`/`IPopularityEnricher`;
+    auth managed identity **no SAS**; regola NetArchTest su `Azure.Messaging`. IaC: `infra/modules/servicebus.bicep`
+    (RBAC least-privilege Sender+Receiver, `disableLocalAuth`) + toggle `enableServiceBus` in `main.bicep`.
+    **Verificato end-to-end senza account Azure**: emulatore ASB ufficiale nei test (Testcontainers) **e** in
+    `docker compose up` (POST → outbox `PROCESSED` → consumer → snapshot). Il Bicep è validato con `bicep build` +
+    test IaC ma **non ancora deployato/`what-if`** (manca un profilo Azure). Vedi `.claude/context/outbox.md` (sez.
+    PR-2), `[L24]`, `infra/README.md`.
+    - ⬜ *Follow-up (alla creazione dell'account Azure):* `what-if`/deploy del modulo, smoke contro un namespace
+      reale, e Key Vault config provider per i secret a runtime.
 
 ## Tier 5 — Meta / polish
 

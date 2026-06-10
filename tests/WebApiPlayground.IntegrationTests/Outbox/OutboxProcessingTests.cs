@@ -23,7 +23,7 @@ namespace WebApiPlayground.IntegrationTests.Outbox;
 [Collection("Integration")]
 public class OutboxProcessingTests : IAsyncLifetime
 {
-    // camelCase + case-insensitive: stesse opzioni del producer/consumer (OutboxMessageFactory.SerializerOptions).
+    // camelCase + case-insensitive: stesse opzioni del producer/consumer (IntegrationEventSerialization.Options).
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     private readonly PlaygroundApiFactory _factory;

@@ -42,4 +42,13 @@ public class MainTemplateTests
         // Condizionale sul flag enableMonitoring (toggle per azzerare i costi).
         Assert.Contains("parameters('enableMonitoring')", monitoring.GetProperty("condition").GetString());
     }
+
+    [SkippableFact]
+    public void Main_provisions_service_bus_when_enabled()
+    {
+        var serviceBus = BicepArm.Resources(Template(), "Microsoft.Resources/deployments")
+            .Single(d => d.GetProperty("name").GetString() == "servicebus");
+        // Condizionale sul flag enableServiceBus (toggle per azzerare i costi dello SKU Standard).
+        Assert.Contains("parameters('enableServiceBus')", serviceBus.GetProperty("condition").GetString());
+    }
 }

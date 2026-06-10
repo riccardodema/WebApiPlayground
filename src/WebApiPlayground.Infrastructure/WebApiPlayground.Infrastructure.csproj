@@ -7,12 +7,17 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Azure Service Bus: trasporto del broker per l'outbox (PR-2). Azure.Identity fornisce
+         DefaultAzureCredential per l'auth via managed identity (no SAS) in produzione. -->
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
+    <!-- 10.0.3 (non 10.0.0): Azure.Core (via Azure.Identity) richiede >= 10.0.3; evita il downgrade NU1605. -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.3" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
     <PackageReference Include="ZiggyCreatures.FusionCache" Version="2.6.0" />
@@ -23,6 +28,13 @@
   <ItemGroup>
     <ProjectReference Include="..\WebApiPlayground.Application\WebApiPlayground.Application.csproj" />
     <ProjectReference Include="..\WebApiPlayground.Domain\WebApiPlayground.Domain.csproj" />
+  </ItemGroup>
+
+  <!-- Espone i tipi internal della composition root (routing/serializzazione outbox) ai progetti di test,
+       così restano internal in produzione ma sono verificabili in isolamento. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="WebApiPlayground.Tests" />
+    <InternalsVisibleTo Include="WebApiPlayground.IntegrationTests" />
   </ItemGroup>
 
 </Project>

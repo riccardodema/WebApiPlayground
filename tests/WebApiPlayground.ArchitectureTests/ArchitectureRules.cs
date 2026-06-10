@@ -45,6 +45,12 @@ internal static class ArchitectureRules
     internal static readonly string[] BackgroundProcessingImplementationNamespaces =
         ["Microsoft.Extensions.Hosting", "System.Threading.Channels"];
 
+    // Messaging/outbox: Application dipende solo dall'astrazione IIntegrationEventPublisher (primitive BCL).
+    // L'SDK Azure Service Bus (Azure.Messaging) e l'auth managed identity (Azure.Identity) sono il trasporto,
+    // confinato a Infrastructure → non devono trapelare in Application. Stesso principio della cache/resilienza.
+    internal static readonly string[] MessagingImplementationNamespaces =
+        ["Azure.Messaging", "Azure.Identity"];
+
     // Assembly anchor: un tipo pubblico stabile per ciascun layer.
     internal static readonly Assembly DomainAssembly = typeof(Book).Assembly;
     internal static readonly Assembly ApplicationAssembly = typeof(IBookRepository).Assembly;
