@@ -57,13 +57,20 @@ con `depends_on … service_completed_successfully`.
 
 ## docker-compose (stack locale)
 
-[`docker-compose.yml`](../../docker-compose.yml) — tre servizi:
+[`docker-compose.yml`](../../docker-compose.yml) — quattro servizi:
 
 - **`db`** (`mssql/server:2022-latest`): `ACCEPT_EULA`, `MSSQL_SA_PASSWORD` da `.env`, volume per la
   persistenza, **healthcheck** via `sqlcmd … SELECT 1`. `platform: linux/amd64` (vedi note Apple Silicon).
+- **`servicebus`** (`azure-messaging/servicebus-emulator`): **emulatore ufficiale** di Azure Service Bus →
+  in compose l'outbox gira sul **broker reale** (publisher → coda → consumer), non in-process. Coda dichiarata in
+  [`docker/servicebus-emulator/Config.json`](../../docker/servicebus-emulator/Config.json). Riusa il container
+  `db` come backend SQL (`SQL_SERVER=db`, l'emulatore lo richiede) → niente terzo container. `platform:
+  linux/amd64`. L'app vi punta via `ServiceBus__ConnectionString` (host = nome servizio, `UseDevelopmentEmulator=true`).
+  Vedi `outbox.md` (sez. PR-2) e [L24].
 - **`db-migrations`**: build di `database/`, `DB_CONNECTION` verso `db`, parte **dopo** `db` *healthy*.
-- **`api`**: build del `Dockerfile` di root, `8080:8080`, attende `db` *healthy* **e** `db-migrations`
-  *completed_successfully* → all'avvio dell'API lo schema c'è già.
+- **`api`**: build del `Dockerfile` di root, `8080:8080`, attende `db` *healthy*, `db-migrations`
+  *completed_successfully* e `servicebus` *started* → all'avvio dell'API schema e broker ci sono (il consumer
+  riprova comunque lo start finché l'emulatore non è pronto).
 
 ```bash
 cp .env.example .env            # imposta MSSQL_SA_PASSWORD (password "forte")

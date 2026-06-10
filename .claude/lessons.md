@@ -613,6 +613,80 @@ Testcontainers). Dettagli in `.claude/context/docker.md`.
 
 ---
 
+## [L24] Outbox + broker Azure Service Bus (PR-2): trasporto astratto config-gated, handoff at-least-once, emulatore nei test
+
+**Contesto:** Tier 4 step 2 — PR-2 aggiunge il **broker** all'outbox [L22]. L'arricchimento popolarità si
+disaccoppia: l'outbox **pubblica** su Service Bus, un **consumer** separato arricchisce. Dettagli in
+`.claude/context/outbox.md`.
+
+**Decisioni e cause:**
+- **Trasporto dietro un'astrazione, non un `if` nel processore.** Il `OutboxProcessor` non chiama più l'enricher:
+  pubblica via `IIntegrationEventPublisher` (Application, BCL pura). Due impl in Infrastructure, scelte dalla
+  composition root come Redis/OTLP: `InProcessIntegrationEventPublisher` (default, gestisce subito → identico a
+  PR-1) e `ServiceBusIntegrationEventPublisher` (se `ServiceBus` è configurato). Vuoto = in-process → **gira
+  ovunque senza Azure**. Regola NetArchTest dedicata: Application non deve dipendere da `Azure.Messaging`/`Azure.Identity`.
+- **Routing in un solo posto.** La logica "evento → enricher" (+ span correlato al `traceparent`) sta in un unico
+  `IntegrationEventHandler`, riusato dal publisher in-process **e** dal consumer ASB → impossibile divergere. La
+  mappa `Type → tipo concreto` è in `IntegrationEventSerialization` (unica sorgente, usata anche dalla riga outbox).
+- **`ProcessedAt` = "consegnato al trasporto", non "arricchito".** In modalità ASB l'outbox marca processato quando
+  il **broker accetta** il messaggio (durevole): l'arricchimento avviene dopo, nel consumer, con il **suo**
+  at-least-once (settlement manuale: `Complete` a successo, `Abandon` → redelivery, oltre `maxDeliveryCount` →
+  dead-letter). Consumer **idempotente** (upsert snapshot 1:1 col libro) → redelivery sicura. Conseguenza nota: il
+  contatore `background.tasks.processed` conta i *publish* sul broker, non gli arricchimenti del consumer
+  (osservabili via metriche ASB + span "Popularity.Enrich").
+- **No SAS anche in IaC.** Il modulo `servicebus.bicep` ha `disableLocalAuth: true` (solo AAD) → l'app si autentica
+  con managed identity (`FullyQualifiedNamespace` + `DefaultAzureCredential`), nessun segreto. RBAC least-privilege
+  sull'ambito **coda**: Data Sender + Data Receiver (non Owner). La connection string SAS serve **solo**
+  all'emulatore locale.
+- **PITFALL package — downgrade NU1605.** `Azure.Identity` → `Azure.Core` richiede
+  `Microsoft.Extensions.Hosting.Abstractions >= 10.0.3`: pinnata a 10.0.0 il restore **fallisce** (warning-as-error
+  sul downgrade). → bumpare quella reference a 10.0.3.
+- **PITFALL test — emulatore ASB con Testcontainers.** Il modulo `Testcontainers.ServiceBus` avvia l'emulatore
+  ufficiale (+ un MsSql di supporto) e ha una coda di default **`queue.1`** (la si usa via `ServiceBus:QueueName`).
+  (a) **Ordine:** l'emulatore va avviato **prima** che la `WebApplicationFactory` costruisca l'host (la connection
+  string si legge in `AddInfrastructure`); si reimplementa **esplicitamente** `IAsyncLifetime` nella factory
+  derivata (rimappa per il tipo derivato) avviando il container e poi delegando a `base.InitializeAsync()`. (b) Il
+  bump a Testcontainers **4.12** (tirato da `Testcontainers.ServiceBus`) **deprecat​a** il costruttore senza
+  immagine → pinnare il tag esplicito in `MsSqlBuilder(...)`/`ServiceBusBuilder(...)` (anche più riproducibile).
+  (c) Il test reale (publish→consume→enrich) sta nella **collection serializzata** [L18] con factory+container
+  dedicati; il **seam** (outbox pubblica senza arricchire) è coperto a parte con un publisher **fake**, senza broker.
+- **Bicep scritto ma NON deployato.** Senza profilo/subscription Azure il modulo è **validato con `bicep build`**
+  (lint/compile) e dai test IaC (`ServiceBusModuleTests`), ma `what-if`/deploy restano da fare alla creazione
+  dell'account — documentato come tale, nessun claim di "deployato".
+- **ASB è il percorso REALE, non opzionale (scelta di design).** Inizialmente il trasporto era config-gated con
+  l'in-process come *default*. Su richiesta si è ribaltato: ASB è il trasporto reale in **docker-compose**
+  (emulatore sempre acceso → il giro publisher→coda→consumer gira in locale) e in **Production** (managed
+  identity), mentre l'in-process resta **solo** come fallback per il bare `dotnet run` offline (Development).
+  Conseguenza: `StartupConfigurationValidator` richiede `ServiceBus:FullyQualifiedNamespace` **fuori da
+  Development** (fail-fast, come DB/AzureAd [L23]).
+- **PITFALL compose — l'emulatore non è un one-liner.** Serve: (a) un `Config.json` montato in
+  `/ServiceBus_Emulator/ConfigFiles/Config.json` che **dichiara la coda** (stesso nome dell'app); (b) un **SQL
+  Server di supporto** (l'emulatore lo richiede per il suo stato) — qui si **riusa il container `db`**
+  (`SQL_SERVER=db`) per non avere un terzo SQL pesante su arm64; (c) `ACCEPT_EULA=Y`; (d) connection string
+  **statica** dell'emulatore `Endpoint=sb://<servizio>;…;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true`
+  (host = nome del servizio compose, chiave letterale nota). Solo amd64 → `platform: linux/amd64` su Apple Silicon.
+- **PITFALL avvio — `StartProcessingAsync` che lancia abbatte l'host.** Se il broker non è pronto quando il
+  consumer parte (ordine di boot in compose), l'eccezione in un `BackgroundService` ferma l'host
+  (`BackgroundServiceExceptionBehavior.StopHost`). → il consumer **riprova** lo start con backoff finché il broker
+  risponde (robusto anche per outage transitori in prod); `depends_on: servicebus` è solo best-effort.
+- **Transitorio atteso allo startup compose.** L'emulatore registra la coda *dopo* aver accettato connessioni:
+  per ~1-2s il receive-loop del processore logga `MessagingEntityNotFound` (a livello ERR) finché la coda non
+  esiste, poi **si auto-ripristina** da solo (verificato: lo snapshot viene comunque scritto). Si è scelto di
+  **non** declassare quel log: un `MessagingEntityNotFound` *persistente* segnala una coda/nome sbagliati e va
+  visto. **Verifica E2E reale** (`docker compose up` + POST): outbox `PROCESSED`, snapshot scritto dal consumer.
+
+**Debolezza voluta (→ futuro):** il consumer è in-process nell'API; è già predisposto per lo split in un Worker
+(`Microsoft.NET.Sdk.Worker`) — nessuna dipendenza dall'API, riusa `IPopularityEnricher`/`IntegrationEventHandler`.
+
+**Soluzione:** vedi `Application/Outbox/IIntegrationEventPublisher.cs`, `Infrastructure/Outbox/`
+(`IntegrationEventHandler`, `IntegrationEventSerialization`, `InProcessIntegrationEventPublisher`, refactor di
+`OutboxProcessor`) e `Infrastructure/Outbox/ServiceBus/` (`ServiceBusOptions`, publisher, consumer, registration),
+il gating in `DependencyInjection.AddOutboxProcessing`, `infra/modules/servicebus.bicep` + wiring in `main.bicep`,
+e i test `tests/.../IntegrationTests/Outbox/` (`OutboxTransportTests` fake + `ServiceBusOutboxTests` emulatore),
+`tests/.../Tests/Outbox/` (handler + serializzazione), `tests/.../IacTests/ServiceBusModuleTests.cs`.
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

@@ -92,6 +92,25 @@ public class DockerArtifactsContractTests
         Assert.Contains("8080:8080", compose);
     }
 
+    [Fact]
+    public void Compose_runs_service_bus_emulator_as_real_outbox_transport()
+    {
+        var compose = DockerAssets.Read("docker-compose.yml");
+        // L'emulatore ASB è parte dello stack → l'outbox gira sul broker reale (publisher → coda → consumer).
+        Assert.Contains("azure-messaging/servicebus-emulator", compose);
+        // L'app vi punta via connection string statica dell'emulatore (host = nome servizio).
+        Assert.Contains("ServiceBus__ConnectionString", compose);
+        Assert.Contains("UseDevelopmentEmulator=true", compose);
+    }
+
+    [Fact]
+    public void Service_bus_emulator_config_declares_the_outbox_queue()
+    {
+        var config = DockerAssets.Read("docker/servicebus-emulator/Config.json");
+        // La coda dell'emulatore deve combaciare col default dell'app (ServiceBus:QueueName) e col Bicep.
+        Assert.Contains("popularity-enrichment", config);
+    }
+
     // ----- database/Dockerfile (migrations) -----------------------------------
 
     [Fact]

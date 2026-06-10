@@ -128,6 +128,20 @@ public class LayerDependencyTests
         AssertArchitecture(result);
     }
 
+    [Fact]
+    public void Application_should_not_depend_on_messaging_implementations()
+    {
+        // L'outbox espone in Application solo l'astrazione IIntegrationEventPublisher (primitive BCL). L'SDK
+        // Azure Service Bus (Azure.Messaging) e l'auth managed identity (Azure.Identity) sono il trasporto,
+        // confinato a Infrastructure — non deve trapelare in Application.
+        var result = Types.InAssembly(ArchitectureRules.ApplicationAssembly)
+            .ShouldNot()
+            .HaveDependencyOnAny(ArchitectureRules.MessagingImplementationNamespaces)
+            .GetResult();
+
+        AssertArchitecture(result);
+    }
+
     // ---- Infrastructure: Domain + Application, mai API ----------------------
 
     [Fact]

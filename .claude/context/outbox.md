@@ -1,8 +1,9 @@
 # Outbox pattern — arricchimento popolarità durevole (at-least-once)
 
-**Tier 4, step 2** della roadmap. **PR-1** (questa pagina): outbox transazionale **senza broker** — risolve la
-debolezza at-most-once dello step 1 ([background-processing.md](background-processing.md), [L21]). **PR-2** (in
-fondo): broker **Azure Service Bus** dietro la stessa astrazione. Pitfall in `.claude/lessons.md` [L22].
+**Tier 4, step 2** della roadmap. **PR-1**: outbox transazionale **senza broker** — risolve la debolezza
+at-most-once dello step 1 ([background-processing.md](background-processing.md), [L21]). **PR-2** ([in fondo](#pr-2--broker-azure-service-bus-config-gated)):
+broker **Azure Service Bus** dietro la stessa astrazione, con **consumer disaccoppiato** — attivo solo se
+configurato, altrimenti si resta sul path in-process di PR-1. Pitfall in `.claude/lessons.md` [L22] [L24].
 
 ## Perché
 
@@ -24,19 +25,29 @@ POST/PUT /books ─► BookRepository (transazione esplicita):
                               ▼ (durevole su DB)
    OutboxDispatcher (BackgroundService, polling)  ─scope per giro─►  OutboxProcessor.ProcessPendingAsync()
                                                                         • SELECT non processati (FIFO, indice filtrato)
-                                                                        • routing per Type → IPopularityEnricher.EnrichAsync
+                                                                        • deserializza l'evento → IIntegrationEventPublisher.PublishAsync
                                                                         • ProcessedAt = now  (SOLO a successo)
+
+   IIntegrationEventPublisher (il "dove va" l'evento — scelto in config):
+     ├─ default  →  InProcessIntegrationEventPublisher ─► IntegrationEventHandler ─► IPopularityEnricher  (PR-1, in-process)
+     └─ ServiceBus configurato → ServiceBusIntegrationEventPublisher ─► [queue] ─► ServiceBusIntegrationEventConsumer
+                                                                                      └─► IntegrationEventHandler ─► IPopularityEnricher
 ```
 
 | Componente | Layer | Ruolo |
 |------------|-------|-------|
 | `IntegrationEvent` (+ `PopularityEnrichmentRequested`) | Application | Evento serializzabile (JSON); `EventType` = discriminatore. |
+| `IIntegrationEventPublisher` | Application | **Trasporto** dell'evento (dove va consegnato). Astrazione del seam outbox→consegna. |
 | `IPopularityEnricher` | Application | Logica di arricchimento riusabile (client resiliente → upsert snapshot). |
 | `IBookRepository.Create/UpdateAsync(book, Func<int,IntegrationEvent>)` | Application | Firma che porta la **factory** dell'evento outbox. |
 | `OutboxMessage` (+ tabella) | Domain / DB | Riga outbox: `Type`/`Payload`/`OccurredAt`/`ProcessedAt`/`Attempts`/`Error`. |
-| `OutboxMessageFactory` | Infrastructure | `IntegrationEvent` → riga (Type + JSON). Opzioni serializer **condivise** col processore. |
-| `OutboxProcessor` | Infrastructure | **Unità di lavoro** (scoped): processa un batch, marca a successo, isola i fallimenti. |
+| `IntegrationEventSerialization` | Infrastructure | Sorgente unica del contratto JSON + mappa `Type → concreto` (riga outbox e body ASB). |
+| `OutboxMessageFactory` | Infrastructure | `IntegrationEvent` → riga (Type + JSON), via `IntegrationEventSerialization`. |
+| `OutboxProcessor` | Infrastructure | **Unità di lavoro** (scoped): processa un batch, **pubblica** via trasporto, marca a successo, isola i fallimenti. |
 | `OutboxDispatcher : BackgroundService` | Infrastructure | **Loop di hosting**: polla e delega al processore (scope per giro). |
+| `IntegrationEventHandler` | Infrastructure | **Routing** evento→enricher (+ span correlato). Condiviso dai due trasporti. |
+| `InProcessIntegrationEventPublisher` | Infrastructure | Trasporto **default**: gestisce subito in-process (= comportamento PR-1). |
+| `ServiceBus*` (publisher, consumer, options, registration) | Infrastructure | Trasporto **broker** (PR-2): pubblica sulla coda / consuma e arricchisce. Vedi sotto. |
 | `PopularityEnricher` | Infrastructure | Impl di `IPopularityEnricher` (estratta dal vecchio worker su canale). |
 
 ## Scrittura transazionale (il cuore del pattern)
@@ -74,16 +85,100 @@ non introduce hosting in Application).
 ## Configurazione
 
 Sezione `Outbox` (appsettings): `PollingInterval` (latenza max a regime), `BatchSize` (FIFO per giro),
-`MaxAttempts` (soglia poison). L'outbox è **sempre attiva e durevole**; in PR-2 la *pubblicazione su ASB* sarà
-config-gated (come Redis/OTLP), con fallback al path in-process.
+`MaxAttempts` (soglia poison). L'outbox è **sempre attiva e durevole**; la *pubblicazione su ASB* è **config-gated**
+(sezione `ServiceBus`, come Redis/OTLP), con fallback al path in-process (vedi sotto).
 
-## Limite voluto → PR-2 (Azure Service Bus)
+---
 
-Consegna **mono-processo** (didattico, tutto nello stesso repo POC) e dispatcher a **polling**: un solo processo.
-Per multi-istanza servirebbe un lock di riga (`UPDLOCK`/`READPAST`) o un broker. È il movente di **PR-2**: pubblicare
-su ASB dietro `IIntegrationEventPublisher`, con un **consumer disaccoppiato** che riusa `IPopularityEnricher` —
-predisposto per uno split in un Worker (`Microsoft.NET.Sdk.Worker`) a costo basso. Codice messaging segregato in
-`Outbox/` apposta.
+# PR-2 — Broker Azure Service Bus (config-gated)
+
+PR-1 consegna **mono-processo**: un solo dispatcher a polling arricchisce in-process. Per scalare a più istanze
+(competing-consumers) servirebbe un lock di riga (`UPDLOCK`/`READPAST`) o un **broker**. PR-2 introduce il broker
+**Azure Service Bus** *dietro la stessa astrazione*, **senza cambiare il path di write** e **senza richiedere Azure**
+per girare (gating).
+
+## Il seam: `IIntegrationEventPublisher`
+
+Il `OutboxProcessor` non chiama più l'enricher: deserializza la riga e la **pubblica** via `IIntegrationEventPublisher`
+(Application, BCL pura). Il *dove va* l'evento è scelto nella composition root (`AddOutboxProcessing`):
+
+| Trasporto | Quando | `PublishAsync` significa | `ProcessedAt` marcato quando |
+|-----------|--------|--------------------------|------------------------------|
+| `ServiceBusIntegrationEventPublisher` | `ServiceBus:ConnectionString` o `:FullyQualifiedNamespace` valorizzati | **invia** il messaggio sulla coda | il **broker** ha accettato il messaggio (durevole) |
+| `InProcessIntegrationEventPublisher` | nessuna config `ServiceBus` (solo dev offline) | gestisci **subito** in-process (→ `IntegrationEventHandler` → enricher) | l'arricchimento in-process è riuscito |
+
+> **ASB è il percorso reale, non opzionale.** È attivo in **docker-compose** (emulatore, vedi sotto) e in
+> **Production** (managed identity). Fuori da Development il broker è **obbligatorio**: `StartupConfigurationValidator`
+> fa **fail-fast** se manca `ServiceBus:FullyQualifiedNamespace`. L'in-process resta solo come comodità per il bare
+> `dotnet run` **senza** Docker/emulatore (Development), così l'app gira anche offline — stesso spirito del gating di
+> Redis/OTLP.
+
+> **Punto chiave:** in modalità ASB, "consegnato" (e quindi `ProcessedAt`) significa **handoff durevole al broker**,
+> non "arricchito". L'arricchimento avviene **dopo**, nel consumer, con il *suo* at-least-once. È il design canonico
+> outbox→broker: l'outbox garantisce che l'evento arrivi al broker, il broker garantisce che arrivi al consumer.
+
+## Consumer disaccoppiato + at-least-once lato broker
+
+`ServiceBusIntegrationEventConsumer` (`BackgroundService`, registrato solo se ASB è configurato) riceve dalla coda e
+riusa lo **stesso** `IntegrationEventHandler` del path in-process (zero duplicazione). Settlement **manuale**
+(`AutoCompleteMessages = false`):
+
+- successo → `CompleteMessageAsync` (rimosso dalla coda);
+- fallimento → `AbandonMessageAsync` → ASB **ridistribuisce**; oltre `maxDeliveryCount` della coda → **dead-letter**
+  (resta per diagnostica, non blocca gli altri);
+- **scope per messaggio** (enricher/DbContext freschi e isolati, come il dispatcher in-process).
+
+Il consumer è **idempotente** perché l'enricher fa upsert dello snapshot 1:1 col libro → una redelivery è sicura.
+
+## Correlazione oltre il broker
+
+Lo span `Popularity.Enrich` parte **dentro** `IntegrationEventHandler` dal `traceparent` W3C trasportato
+nell'evento (catturato all'enqueue). Vale per **entrambi** i trasporti: nel path ASB la trace della write originaria
+prosegue **oltre il broker**, agganciando lo span del consumer alla richiesta che ha generato l'evento.
+
+## Auth: managed identity (no SAS)
+
+`ServiceBusOptions` supporta due modi: `ConnectionString` (SAS — pensata per **emulatore/locale**) oppure
+`FullyQualifiedNamespace` + `DefaultAzureCredential` (managed identity in Azure → **nessun segreto**). In Azure si usa
+il secondo; il modulo Bicep forza `disableLocalAuth: true` (SAS disabilitate), coerente col principio "no SAS" del
+Key Vault. RBAC least-privilege sull'ambito **coda**: Data Sender (l'outbox pubblica) + Data Receiver (il consumer
+riceve), non Owner.
+
+## IaC (`infra/modules/servicebus.bicep`)
+
+Namespace **Standard** (le code lo richiedono; abilita anche i topic per il futuro) + coda
+`popularity-enrichment` (dead-lettering, `maxDeliveryCount`, lock duration), RBAC condizionale/idempotente,
+diagnostica opzionale verso Log Analytics. Cablato in `main.bicep` dietro il toggle `enableServiceBus` (lo SKU
+Standard ha un costo fisso → spegnibile su ambienti non-live, come `enableMonitoring`). **Scritto e validato con
+`bicep build` + test IaC (`ServiceBusModuleTests`), ma — finché non esiste un profilo Azure — NON ancora deployato
+né verificato con `what-if`.** Vedi `infra/README.md`.
+
+## In locale: docker-compose con l'emulatore
+
+`docker compose up` accende anche l'**emulatore ufficiale** Service Bus (`docker-compose.yml`, servizio
+`servicebus`) → il giro reale **publisher → coda → consumer** gira in locale, non è una modalità a parte. L'app
+riceve `ServiceBus__ConnectionString` puntata all'emulatore (host = nome servizio, `UseDevelopmentEmulator=true`,
+SAS statica nota) e la coda è dichiarata in `docker/servicebus-emulator/Config.json` (stesso nome
+`popularity-enrichment`). L'emulatore richiede un SQL di supporto: riusa il container `db` (`SQL_SERVER=db`), niente
+terzo container. Il consumer **riprova** `StartProcessingAsync` finché l'emulatore non è pronto (ordine di boot in
+compose). Solo amd64 → `platform: linux/amd64` su arm64 [L23]. Vedi [docker.md](docker.md).
+
+## Predisposto per il Worker
+
+Il consumer non dipende dall'API: è già pronto per lo split in un processo Worker dedicato
+(`Microsoft.NET.Sdk.Worker`) — riusa `IPopularityEnricher`/`IntegrationEventHandler`, codice messaging segregato in
+`Outbox/ServiceBus/` apposta.
+
+## Test (vedi anche `.claude/lessons.md` [L24])
+
+- **Seam senza broker** (`OutboxTransportTests`): sostituisce il trasporto con un publisher **fake** che registra e
+  non arricchisce → prova che il processore *pubblica* l'evento corretto e marca processato, **senza** creare lo
+  snapshot (arricchimento delegato al trasporto). Deterministico, niente Docker extra.
+- **Routing/serializzazione** (`IntegrationEventHandlerTests`, `IntegrationEventSerializationTests`): unit dei pezzi
+  condivisi (tipi internal esposti ai test via `InternalsVisibleTo`).
+- **End-to-end col broker reale** (`ServiceBusOutboxTests`): **emulatore** ufficiale ASB via Testcontainers (coda di
+  default `queue.1`), dispatcher reale acceso → POST → publish→consume→enrich → snapshot. Factory dedicata
+  (`ServiceBusEnabledApiFactory`) con container isolato, nella collection serializzata [L18]. **Niente account Azure.**
 
 ## Test (deterministici, niente polling)
 

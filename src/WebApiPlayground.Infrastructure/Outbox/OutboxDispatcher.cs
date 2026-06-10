@@ -9,9 +9,10 @@ namespace WebApiPlayground.Infrastructure.Outbox;
 /// Loop di hosting dell'outbox: polla periodicamente (intervallo da <see cref="OutboxOptions"/>) e delega il
 /// lavoro a un <see cref="OutboxProcessor"/> risolto in uno <b>scope per giro</b> (DbContext non catturato nel
 /// singleton). Marca i messaggi solo a successo → consegna <b>at-least-once</b> durevole. Errori a livello di
-/// batch (es. DB momentaneamente giù) sono isolati: si logga, si attende, si riprova — nessuna perdita. In PR-2
-/// il processore pubblicherà su Azure Service Bus dietro la stessa astrazione. La logica vive nel processore
-/// (testabile deterministicamente); qui solo il loop. Vedi <c>.claude/context/outbox.md</c>.
+/// batch (es. DB momentaneamente giù) sono isolati: si logga, si attende, si riprova — nessuna perdita. Il
+/// processore pubblica sul trasporto configurato (<c>IIntegrationEventPublisher</c>: Azure Service Bus o
+/// in-process). La logica vive nel processore (testabile deterministicamente); qui solo il loop.
+/// Vedi <c>.claude/context/outbox.md</c>.
 /// </summary>
 public sealed class OutboxDispatcher : BackgroundService
 {

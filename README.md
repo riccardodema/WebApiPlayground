@@ -272,10 +272,37 @@ and return immediately; an in-process **`BackgroundService`** does it off the ho
   boundary), and `background.tasks.{enqueued,dropped,processed,failed}` counters surface the queue's behaviour.
 - **Honest about its limits → next step.** The queue is in-memory and the enqueue isn't transactional with the DB
   write: items in the queue are lost on a crash and a full queue drops (**at-most-once**). That's acceptable here
-  (normal reads are fresh; the snapshot is only an outage fallback) — and it's exactly what the **Outbox pattern +
-  Azure Service Bus** (Tier 4, step 2) will fix, reusing the same worker and queue abstraction.
+  (normal reads are fresh; the snapshot is only an outage fallback) — and it's exactly what the **transactional
+  outbox + Azure Service Bus** (next section) fixes, reusing the same enricher.
 
 Details: [`.claude/context/background-processing.md`](.claude/context/background-processing.md).
+
+## Transactional outbox + Azure Service Bus
+
+The weakness above — an enqueue that isn't transactional with the write — is fixed the canonical way: a
+**transactional outbox** with a **broker** (Azure Service Bus). The most "distributed systems" piece of the project.
+
+- **Atomic by construction.** `POST/PUT /books` writes the book **and** an `OutboxMessages` row in the *same* EF
+  transaction (explicit transaction; the `IDENTITY` key forces materializing the event *after* the first
+  `SaveChanges`, then commit both). Crash before commit → both roll back. No event is ever produced for a write
+  that didn't happen, and vice versa — **at-least-once, durable**.
+- **The broker is the real transport.** A polling `OutboxDispatcher` reads unprocessed rows and **publishes** them
+  through `IIntegrationEventPublisher`; a **decoupled consumer** receives from the queue and enriches. `ProcessedAt`
+  is set when the **broker durably accepts** the message (the outbox hands off to the broker; the broker guarantees
+  delivery to the consumer). Manual settlement: `Complete` on success, `Abandon` → redelivery → dead-letter for
+  poison messages. The consumer is **idempotent** (snapshot upsert is 1:1 with the book), so redelivery is safe.
+- **One transport seam, config-gated.** `IIntegrationEventPublisher` lives in Application (pure BCL); the Service
+  Bus SDK and the consumer live in Infrastructure (a **NetArchTest rule** keeps `Azure.Messaging` out of
+  Application). Azure Service Bus is the **real** path — it runs in `docker compose` (via the official **emulator**)
+  and in Production (managed identity, **no SAS**) — with an in-process fallback only for a bare offline `dotnet run`.
+- **Correlated past the broker.** The `traceparent` travels in the event, so the consumer's enrich span attaches to
+  the originating write's trace — across the durable boundary *and* across the broker.
+- **Verified end-to-end without an Azure account.** A dedicated integration test runs the real publish→consume→enrich
+  flow against the **Service Bus emulator** (Testcontainers), and `docker compose up` exercises the same flow live.
+  The **Bicep module** (`servicebus.bicep`: AAD-only, RBAC Sender+Receiver on the queue) is authored and validated
+  with `bicep build` + IaC tests — but not yet deployed/`what-if`'d (pending an Azure subscription).
+
+Details: [`.claude/context/outbox.md`](.claude/context/outbox.md).
 
 ## Database as code
 
@@ -326,17 +353,19 @@ change how tests run.
   fails).
 - **`docker compose up` = full local stack.** API + **SQL Server** + the **schema published from the DACPAC**
   (a one-shot `db-migrations` service that reuses the same `deploy.sh` as CI — "DACPAC is the source of
-  truth"), wired with health checks and ordered startup (`api` waits for the DB to be *healthy* and the
-  migrations to *complete*). No local SQL Server install, no manual connection string — the onboarding is
-  genuinely one command. Optional **Redis** (L2 cache + backplane) and **Aspire Dashboard** (OTLP telemetry)
-  are off by default behind compose override files.
+  truth") + the **official Azure Service Bus emulator** — wired with health checks and ordered startup. No
+  local SQL Server install, no manual connection string — the onboarding is genuinely one command. With the
+  emulator in the stack, the **transactional outbox runs over the real broker** locally (publisher → queue →
+  decoupled consumer → popularity snapshot), not the in-process fallback. Optional **Redis** (L2 cache +
+  backplane) and **Aspire Dashboard** (OTLP telemetry) are off by default behind compose override files.
 - **What it gives over Testcontainers**: a deploy-ready artifact (same image dev → CI → prod, the base for
   App Service for Containers / Kubernetes / Container Apps), and a way to exercise the **real** app against
   real dependencies — not the test stubs (auth, Open Library) — clicking through Scalar against a live stack.
 - **Explicit fail-fast on config.** Outside Development the app **refuses to start** if mandatory settings are
   missing, listing **exactly** which ones (and their env-var form) — `ConnectionStrings:Default`,
-  `AzureAd:ClientId/TenantId/Audience`. Locally compose runs in Development, so the dev auth bypass + Scalar
-  work with zero config; the image defaults to Production (12-factor).
+  `AzureAd:ClientId/TenantId/Audience`, `ServiceBus:FullyQualifiedNamespace` (the broker is the real outbox
+  transport in Production). Locally compose runs in Development, so the dev auth bypass + Scalar work with zero
+  config; the image defaults to Production (12-factor).
 - **Tested as code.** `tests/WebApiPlayground.DockerTests` holds static **contract tests** (non-root chiseled
   base, no plaintext secrets, port 8080, health check, migrations-before-api — fast, no Docker) plus a **live
   smoke test** that builds the image, starts the container and asserts `GET /health/live` — which doubles as
@@ -348,7 +377,7 @@ docker compose up --build            # API + SQL + schema → http://localhost:8
 docker compose -f docker-compose.yml -f docker-compose.aspire.yml up   # + OTLP dashboard (:18888)
 ```
 
-> On Apple Silicon (arm64) the SQL Server image runs under emulation (`platform: linux/amd64`).
+> On Apple Silicon (arm64) the SQL Server and Service Bus emulator images run under emulation (`platform: linux/amd64`).
 
 Details and the Testcontainers-vs-image-vs-compose distinction: [`.claude/context/docker.md`](.claude/context/docker.md).
 

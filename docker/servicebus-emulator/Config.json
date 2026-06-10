@@ -1,0 +1,31 @@
+{
+  "//": "Config dell'emulatore Azure Service Bus per docker-compose: dichiara la coda usata dall'outbox (PR-2).",
+  "//queueName": "Deve combaciare con ServiceBus__QueueName dell'app (e con il modulo Bicep). Vedi .claude/context/outbox.md.",
+  "//properties": "Rispecchiano la coda IaC: dead-lettering del poison via MaxDeliveryCount, lock 1m. Vedi infra/modules/servicebus.bicep.",
+  "UserConfig": {
+    "Namespaces": [
+      {
+        "Name": "sbemulatorns",
+        "Queues": [
+          {
+            "Name": "popularity-enrichment",
+            "Properties": {
+              "DeadLetteringOnMessageExpiration": false,
+              "DefaultMessageTimeToLive": "PT1H",
+              "DuplicateDetectionHistoryTimeWindow": "PT20S",
+              "ForwardDeadLetteredMessagesTo": "",
+              "ForwardTo": "",
+              "LockDuration": "PT1M",
+              "MaxDeliveryCount": 10,
+              "RequiresDuplicateDetection": false,
+              "RequiresSession": false
+            }
+          }
+        ]
+      }
+    ],
+    "Logging": {
+      "Type": "File"
+    }
+  }
+}

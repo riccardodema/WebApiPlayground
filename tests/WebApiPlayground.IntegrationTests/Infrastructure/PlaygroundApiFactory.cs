@@ -19,7 +19,10 @@ namespace WebApiPlayground.IntegrationTests.Infrastructure;
 
 public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    private readonly MsSqlContainer _sqlContainer = new MsSqlBuilder().Build();
+    // Immagine pinnata esplicitamente (= ex-default del modulo): Testcontainers 4.12 ha deprecato il
+    // costruttore senza immagine; pinnare il tag rende il container riproducibile.
+    private readonly MsSqlContainer _sqlContainer =
+        new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-CU14-ubuntu-22.04").Build();
 
     /// <summary>
     /// Se <c>true</c> (default) l'<c>OutboxDispatcher</c> hosted è rimosso e il processing si guida via

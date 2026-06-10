@@ -42,6 +42,12 @@ param allowedIpAddresses array = []
 @description('Crea un Log Analytics workspace e invia gli audit log del Key Vault. Best practice: lasciare true. Imposta false per non creare risorse di monitoring (es. per azzerare i costi su un ambiente non-live).')
 param enableMonitoring bool = true
 
+@description('Crea il namespace Service Bus + coda (trasporto dell\'outbox, PR-2). Imposta false per non creare la risorsa (lo SKU Standard ha un costo fisso) su un ambiente non-live. NB: fuori da Development l\'app fa fail-fast senza ServiceBus:FullyQualifiedNamespace (il fallback in-process vale solo in Development) → spegnilo solo dove l\'app non gira o gira in Development.')
+param enableServiceBus bool = true
+
+@description('Nome della coda Service Bus degli eventi di integrazione (deve combaciare con ServiceBus:QueueName dell\'app).')
+param serviceBusQueueName string = 'popularity-enrichment'
+
 @minValue(30)
 @maxValue(730)
 @description('Giorni di retention dei log nel workspace (se enableMonitoring).')
@@ -99,6 +105,22 @@ module keyVault 'modules/keyvault.bicep' = {
   }
 }
 
+module serviceBus 'modules/servicebus.bicep' = if (enableServiceBus) {
+  scope: resourceGroup
+  name: 'servicebus'
+  params: {
+    workload: workload
+    environmentName: environmentName
+    location: location
+    tags: tags
+    queueName: serviceBusQueueName
+    // Stessa managed identity dell'app (Key Vault Secrets User → qui Sender+Receiver sulla coda).
+    appPrincipalId: appPrincipalId
+    // Invia metriche/log al workspace se il monitoring è attivo.
+    diagnosticsWorkspaceId: enableMonitoring ? monitoring!.outputs.id : ''
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Output
 // -----------------------------------------------------------------------------
@@ -106,3 +128,7 @@ module keyVault 'modules/keyvault.bicep' = {
 output resourceGroupName string = resourceGroup.name
 output keyVaultName string = keyVault.outputs.name
 output keyVaultUri string = keyVault.outputs.uri
+// Service Bus: vuoti se non creato. Il FQDN va in ServiceBus:FullyQualifiedNamespace dell'app (auth via managed identity).
+output serviceBusNamespaceName string = enableServiceBus ? serviceBus!.outputs.namespaceName : ''
+output serviceBusFullyQualifiedNamespace string = enableServiceBus ? serviceBus!.outputs.fullyQualifiedNamespace : ''
+output serviceBusQueueName string = enableServiceBus ? serviceBus!.outputs.queueName : ''

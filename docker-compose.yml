@@ -1,6 +1,7 @@
-# Stack di runtime locale completo: API + SQL Server + schema (DACPAC) seedato, con un
-# solo comando. Diverso da Testcontainers (che avvia il DB solo *per i test*): qui gira
-# l'app VERA, in container, contro dipendenze reali. Vedi .claude/context/docker.md.
+# Stack di runtime locale completo: API + SQL Server + schema (DACPAC) seedato + emulatore
+# Azure Service Bus, con un solo comando. Diverso da Testcontainers (che avvia i container solo
+# *per i test*): qui gira l'app VERA, in container, contro dipendenze reali — incluso il giro
+# completo dell'outbox (publisher → coda Service Bus → consumer). Vedi .claude/context/docker.md.
 #
 #   cp .env.example .env
 #   docker compose up --build
@@ -37,6 +38,28 @@ services:
       retries: 10
       start_period: 30s
 
+  # Emulatore UFFICIALE di Azure Service Bus: stesso SDK/protocollo/semantica del cloud, in locale.
+  # È il trasporto REALE dell'outbox in compose (l'app pubblica sulla coda e un consumer la consuma).
+  # Riusa il container `db` come backend SQL (l'emulatore richiede un SQL Server per il suo stato) →
+  # niente terzo container. La coda è dichiarata in docker/servicebus-emulator/Config.json.
+  # Solo amd64: su Apple Silicon (arm64) gira in emulazione (platform). Vedi .claude/lessons.md [L23] [L24].
+  servicebus:
+    image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
+    platform: linux/amd64
+    environment:
+      ACCEPT_EULA: "Y"
+      SQL_SERVER: db
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD in .env (vedi .env.example)}
+    volumes:
+      - ./docker/servicebus-emulator/Config.json:/ServiceBus_Emulator/ConfigFiles/Config.json:ro
+    ports:
+      # 5672 = AMQP (dati), 5300 = management/health. Pubblicate per ispezione; l'app parla via rete interna.
+      - "5672:5672"
+      - "5300:5300"
+    depends_on:
+      db:
+        condition: service_healthy
+
   # Job one-shot: pubblica lo schema (DACPAC + seed) prima che l'API parta.
   db-migrations:
     build:
@@ -59,6 +82,11 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__Default: "Server=db;Database=PlaygroundDatabase;User ID=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;"
+      # Trasporto outbox = emulatore Service Bus (host = nome servizio "servicebus" sulla rete compose).
+      # Connection string STATICA dell'emulatore (UseDevelopmentEmulator=true → SAS fissa nota). In Production
+      # si usa invece ServiceBus__FullyQualifiedNamespace + managed identity (no SAS). Vedi .claude/context/outbox.md.
+      ServiceBus__ConnectionString: "Endpoint=sb://servicebus;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;"
+      ServiceBus__QueueName: "popularity-enrichment"
     ports:
       - "8080:8080"
     depends_on:
@@ -66,6 +94,9 @@ services:
         condition: service_healthy
       db-migrations:
         condition: service_completed_successfully
+      # Best-effort: il consumer riprova comunque StartProcessing finché l'emulatore non è pronto.
+      servicebus:
+        condition: service_started
 
 volumes:
   mssql-data:
