@@ -1,7 +1,9 @@
 # Stack di runtime locale completo: API + SQL Server + schema (DACPAC) seedato + emulatore
-# Azure Service Bus, con un solo comando. Diverso da Testcontainers (che avvia i container solo
-# *per i test*): qui gira l'app VERA, in container, contro dipendenze reali — incluso il giro
-# completo dell'outbox (publisher → coda Service Bus → consumer). Vedi .claude/context/docker.md.
+# Azure Service Bus + emulatore Azure Key Vault, con un solo comando. Diverso da Testcontainers
+# (che avvia i container solo *per i test*): qui gira l'app VERA, in container, contro dipendenze
+# reali — incluso il giro completo dell'outbox (publisher → coda Service Bus → consumer) e i
+# SEGRETI caricati dal vault all'avvio (config provider, niente connection string nell'env
+# dell'api). Vedi .claude/context/docker.md e docs/keyvault.md.
 #
 #   cp .env.example .env
 #   docker compose up --build
@@ -60,6 +62,59 @@ services:
       db:
         condition: service_healthy
 
+  # Emulatore COMMUNITY di Azure Key Vault (james-gould/azure-keyvault-emulator): stessa API REST/SDK
+  # del cloud, in locale. È la FONTE DEI SEGRETI dello stack: l'api non riceve più connection string
+  # via env ma le carica all'avvio dal vault (config provider, KeyVault__Uri + Credential=Emulator,
+  # consentito solo in Development). Immagine PINNATA (supply chain); il tag di default è amd64 e su
+  # Apple Silicon gira in emulazione — c'è il tag arm nativo, vedi .env.example. Vedi docs/keyvault.md.
+  keyvault:
+    image: jamesgoulddev/azure-keyvault-emulator:${KEYVAULT_EMULATOR_TAG:-3.1.0}
+    platform: ${KEYVAULT_EMULATOR_PLATFORM:-linux/amd64}
+    volumes:
+      # TLS obbligatorio (l'SDK Azure pretende https): il cert self-signed lo genera keyvault-certs.
+      - keyvault-certs:/certs:ro
+    ports:
+      # Pubblicata solo per ispezione dall'host (curl -k https://localhost:4997/...): l'api parla
+      # via rete interna (keyvault:4997).
+      - "4997:4997"
+    depends_on:
+      keyvault-certs:
+        condition: service_completed_successfully
+    healthcheck:
+      # bash /dev/tcp: l'immagine (aspnet Debian) non ha curl. Il listener TCP basta come gate del
+      # seed, che poi riprova comunque finché l'API REST non risponde.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/4997"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  # Job one-shot: genera il certificato TLS self-signed dell'emulatore Key Vault nel volume condiviso
+  # (idempotente: se esiste già non fa nulla). PFX password 'emulator' = contratto dell'immagine
+  # dell'emulatore, non un segreto.
+  keyvault-certs:
+    image: alpine/openssl:3.5.4
+    entrypoint: ["/bin/sh", "/generate-cert.sh"]
+    volumes:
+      - keyvault-certs:/certs
+      - ./docker/keyvault-emulator/generate-cert.sh:/generate-cert.sh:ro
+    restart: "no"
+
+  # Job one-shot: mette nel vault i SEGRETI che prima stavano nell'env dell'api (connection string di
+  # DB ed emulatore Service Bus) via REST, come farebbe `az keyvault secret set` sul vault reale
+  # (./infra/set-secrets.sh). L'api parte solo dopo che il seed è completato.
+  keyvault-seed:
+    image: curlimages/curl:8.16.0
+    entrypoint: ["/bin/sh", "/seed-secrets.sh"]
+    environment:
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD in .env (vedi .env.example)}
+    volumes:
+      - ./docker/keyvault-emulator/seed-secrets.sh:/seed-secrets.sh:ro
+    depends_on:
+      keyvault:
+        condition: service_healthy
+    restart: "no"
+
   # Job one-shot: pubblica lo schema (DACPAC + seed) prima che l'API parta.
   db-migrations:
     build:
@@ -81,11 +136,13 @@ services:
       # l'app farebbe fail-fast senza AzureAd/connection string. Vedi .claude/lessons.md [L23].
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
-      ConnectionStrings__Default: "Server=db;Database=PlaygroundDatabase;User ID=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;"
-      # Trasporto outbox = emulatore Service Bus (host = nome servizio "servicebus" sulla rete compose).
-      # Connection string STATICA dell'emulatore (UseDevelopmentEmulator=true → SAS fissa nota). In Production
-      # si usa invece ServiceBus__FullyQualifiedNamespace + managed identity (no SAS). Vedi .claude/context/outbox.md.
-      ServiceBus__ConnectionString: "Endpoint=sb://servicebus;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;"
+      # NIENTE SEGRETI QUI: le connection string (DB + emulatore Service Bus) stanno nel Key Vault
+      # emulato (job keyvault-seed) e l'app le carica all'avvio col config provider. Credential
+      # 'Emulator' = token mintato + TLS self-signed accettato, consentita SOLO in Development;
+      # contro il vault reale si usa ManagedIdentity/AzureCli. Vedi docs/keyvault.md.
+      KeyVault__Uri: "https://keyvault:4997"
+      KeyVault__Credential: "Emulator"
+      # Il nome della coda non è un segreto (vedi .claude/context/outbox.md): resta in env.
       ServiceBus__QueueName: "popularity-enrichment"
     ports:
       - "8080:8080"
@@ -94,9 +151,14 @@ services:
         condition: service_healthy
       db-migrations:
         condition: service_completed_successfully
+      # I segreti devono essere NEL vault prima che l'app li legga allo startup.
+      keyvault-seed:
+        condition: service_completed_successfully
       # Best-effort: il consumer riprova comunque StartProcessing finché l'emulatore non è pronto.
       servicebus:
         condition: service_started
 
 volumes:
   mssql-data:
+  # Certificato TLS self-signed dell'emulatore Key Vault (generato da keyvault-certs, letto da keyvault).
+  keyvault-certs:

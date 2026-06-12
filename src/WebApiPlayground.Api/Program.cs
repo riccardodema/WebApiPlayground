@@ -2,6 +2,7 @@ using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Sinks.OpenTelemetry;
 using WebApiPlayground.Api.Configuration;
+using WebApiPlayground.Api.Configuration.KeyVault;
 using WebApiPlayground.Api.Extensions;
 using WebApiPlayground.Api.HealthChecks;
 using WebApiPlayground.Api.Http;
@@ -21,6 +22,11 @@ try
     Log.Information("Starting WebApiPlayground API");
 
     var builder = WebApplication.CreateBuilder(args);
+
+    // Key Vault config provider (config-gated su KeyVault:Uri), PRIMA del fail-fast: i secret del vault
+    // entrano in IConfiguration e soddisfano il validator. Vault irraggiungibile/negato → eccezione
+    // parlante (uri, credential, cause, rimedio) → Log.Fatal sotto. Vedi docs/keyvault.md.
+    builder.AddKeyVaultIfConfigured();
 
     // Fail-fast: fuori da Development (es. immagine in Production) rifiuta l'avvio se manca
     // configurazione obbligatoria, elencando esattamente cosa impostare. In Development è un no-op.
@@ -131,6 +137,10 @@ try
 catch (Exception ex) when (ex is not OperationCanceledException && ex.GetType().Name != "StopTheHostException")
 {
     Log.Fatal(ex, "Application terminated unexpectedly");
+    // Fail-fast onesto verso orchestratore/CI: senza exit code non-zero un processo morto allo startup
+    // (config mancante, Key Vault irraggiungibile) sembrerebbe terminato "con successo" e restart
+    // policy/health gate non se ne accorgerebbero.
+    Environment.ExitCode = 1;
 }
 finally
 {

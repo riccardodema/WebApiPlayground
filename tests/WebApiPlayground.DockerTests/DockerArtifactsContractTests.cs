@@ -98,9 +98,57 @@ public class DockerArtifactsContractTests
         var compose = DockerAssets.Read("docker-compose.yml");
         // L'emulatore ASB è parte dello stack → l'outbox gira sul broker reale (publisher → coda → consumer).
         Assert.Contains("azure-messaging/servicebus-emulator", compose);
-        // L'app vi punta via connection string statica dell'emulatore (host = nome servizio).
-        Assert.Contains("ServiceBus__ConnectionString", compose);
-        Assert.Contains("UseDevelopmentEmulator=true", compose);
+        // La sua connection string è un SEGRETO dello stack: non sta più nell'env dell'api ma nel
+        // Key Vault emulato (vedi Compose_api_reads_secrets_from_key_vault_not_from_env).
+        var seed = DockerAssets.Read("docker/keyvault-emulator/seed-secrets.sh");
+        Assert.Contains("ServiceBus--ConnectionString", seed);
+        Assert.Contains("UseDevelopmentEmulator=true", seed);
+    }
+
+    // ----- Key Vault emulator ---------------------------------------------------
+
+    [Fact]
+    public void Compose_api_reads_secrets_from_key_vault_not_from_env()
+    {
+        var compose = DockerAssets.Read("docker-compose.yml");
+        // L'api punta al vault emulato col config provider (credential Emulator = solo Development)...
+        Assert.Contains("KeyVault__Uri", compose);
+        Assert.Contains("https://keyvault:4997", compose);
+        Assert.Contains("KeyVault__Credential", compose);
+        Assert.Contains("Emulator", compose);
+        // ...e nessuna connection string vive più nell'env dell'api (il DB del job migrations usa
+        // DB_CONNECTION: sqlpackage non parla col vault).
+        Assert.DoesNotContain("ConnectionStrings__Default", compose);
+        Assert.DoesNotContain("ServiceBus__ConnectionString", compose);
+        // L'app parte solo a vault seedato: i secret devono esserci PRIMA dello startup.
+        Assert.Contains("keyvault-seed", compose);
+    }
+
+    [Fact]
+    public void Key_vault_emulator_image_is_pinned()
+    {
+        var compose = DockerAssets.Read("docker-compose.yml");
+        // Immagine community → tag PINNATO (supply chain), mai :latest; overridabile da .env per arm64.
+        Assert.Contains("jamesgoulddev/azure-keyvault-emulator:${KEYVAULT_EMULATOR_TAG:-3.1.0}", compose);
+        Assert.DoesNotContain("azure-keyvault-emulator:latest", compose);
+    }
+
+    [Fact]
+    public void Key_vault_seed_script_seeds_the_db_connection_string()
+    {
+        var seed = DockerAssets.Read("docker/keyvault-emulator/seed-secrets.sh");
+        // Nome con '--' (→ ':' in IConfiguration) e password parametrizzata da .env, mai in chiaro.
+        Assert.Contains("ConnectionStrings--Default", seed);
+        Assert.Contains("${MSSQL_SA_PASSWORD}", seed);
+    }
+
+    [Fact]
+    public void Key_vault_cert_script_generates_tls_for_the_compose_hostname()
+    {
+        var script = DockerAssets.Read("docker/keyvault-emulator/generate-cert.sh");
+        // SAN 'keyvault' = hostname del servizio sulla rete compose; password PFX = contratto dell'immagine.
+        Assert.Contains("DNS:keyvault", script);
+        Assert.Contains("pass:emulator", script);
     }
 
     [Fact]

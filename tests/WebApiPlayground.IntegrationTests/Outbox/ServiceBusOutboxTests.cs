@@ -39,14 +39,15 @@ public sealed class ServiceBusEnabledApiFactory : PlaygroundApiFactory, IAsyncLi
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.ConfigureAppConfiguration(config => config.AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            // Connection string dell'emulatore → attiva il trasporto ASB (publisher + consumer disaccoppiato).
-            ["ServiceBus:ConnectionString"] = _serviceBus.GetConnectionString(),
-            ["ServiceBus:QueueName"] = EmulatorDefaultQueue,
-            // Polling stretto: l'outbox pubblica in fretta → il test attende poco (con timeout generoso).
-            ["Outbox:PollingInterval"] = "00:00:00.200",
-        }));
+        // UseSetting (host configuration), NON ConfigureAppConfiguration: la scelta del trasporto avviene
+        // in FASE BUILDER (AddInfrastructure legge ServiceBus:ConnectionString eager per decidere ASB vs
+        // in-process) e i provider aggiunti via ConfigureAppConfiguration dalla factory arrivano solo DOPO
+        // → sarebbero invisibili lì e il test girerebbe in-process passando per il motivo sbagliato
+        // (l'handler è lo stesso). Il probe Transport_is_really_Azure_Service_Bus lo fa rispettare.
+        builder.UseSetting("ServiceBus:ConnectionString", _serviceBus.GetConnectionString());
+        builder.UseSetting("ServiceBus:QueueName", EmulatorDefaultQueue);
+        // Polling stretto: l'outbox pubblica in fretta → il test attende poco (con timeout generoso).
+        builder.UseSetting("Outbox:PollingInterval", "00:00:00.200");
         base.ConfigureWebHost(builder);
     }
 
@@ -124,6 +125,15 @@ public class ServiceBusOutboxTests : IClassFixture<ServiceBusEnabledApiFactory>,
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlaygroundDbContext>();
         return !await db.OutboxMessages.AsNoTracking().AnyAsync(m => m.ProcessedAt == null);
+    }
+
+    [Fact]
+    public void Transport_is_really_Azure_Service_Bus()
+    {
+        // Probe strutturale: il ServiceBusClient è registrato SOLO quando il trasporto ASB è attivo
+        // (AddServiceBusTransport). Senza questo check il test e2e sotto passerebbe anche col fallback
+        // in-process (stesso handler, stesso snapshot) — cioè senza mai toccare il broker.
+        Assert.NotNull(_factory.Services.GetService<Azure.Messaging.ServiceBus.ServiceBusClient>());
     }
 
     [Fact]

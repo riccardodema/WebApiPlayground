@@ -113,8 +113,8 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
     `docker compose up` (POST → outbox `PROCESSED` → consumer → snapshot). Il Bicep è validato con `bicep build` +
     test IaC ma **non ancora deployato/`what-if`** (manca un profilo Azure). Vedi `.claude/context/outbox.md` (sez.
     PR-2), `[L24]`, `infra/README.md`.
-    - ⬜ *Follow-up (alla creazione dell'account Azure):* `what-if`/deploy del modulo, smoke contro un namespace
-      reale, e Key Vault config provider per i secret a runtime.
+    - ⬜ *Follow-up (alla creazione dell'account Azure):* `what-if`/deploy del modulo e smoke contro un
+      namespace reale.
 
 ## Tier 5 — Meta / polish
 
@@ -127,7 +127,18 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
   stack locale in un comando (API + SQL + opz. Redis/Aspire via override). Più **fail-fast esplicito**
   sulla config obbligatoria fuori da Development. Test contract + smoke live in `DockerTests`. Prima
   Docker serviva solo ai test (Testcontainers). Vedi `docker.md` + [L23].
-- ⬜ **Key Vault config provider** a runtime: l'app legge i secret dalla KV già creata in IaC.
+- ✅ **Key Vault config provider** a runtime: i segreti (connection string DB; in compose anche quella
+  dell'emulatore ASB) entrano in `IConfiguration` **dal vault**, config-gated su `KeyVault:Uri` (vuoto =
+  spento, come Redis/OTLP/ASB), aggiunto per ULTIMO (vince su appsettings/env) e PRIMA del fail-fast (i
+  secret soddisfano il validator). Credential **esplicita** per ambiente (`ManagedIdentity` default /
+  `AzureCli` locale-vs-vault-reale / `Emulator` solo-Development) — niente `DefaultAzureCredential`.
+  Vault irraggiungibile/negato → errore PARLANTE (uri, credential, cause, rimedio) + exit code non-zero
+  (fix del catch di Program.cs che usciva 0). In compose l'**emulatore community** (immagine pinnata,
+  cert one-shot openssl, seed REST one-shot) sostituisce le connection string nell'env dell'api; sul
+  vault reale: `infra/set-secrets.sh`. E2e con emulatore via Testcontainers self-made (NO NuGet del
+  progetto emulatore: scriverebbe nel trust store host). Scoperto+fixato [L25]: config WAF invisibile in
+  fase builder → `ServiceBusOutboxTests` girava in-process; ora `UseSetting` + probe sul trasporto.
+  Vedi `.claude/context/keyvault.md`, `docs/keyvault.md`, `[L25]` `[L26]`.
 
 ---
 

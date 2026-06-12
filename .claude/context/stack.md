@@ -5,6 +5,8 @@
 | Package | Progetto | Versione |
 |---------|----------|----------|
 | `Microsoft.AspNetCore.OpenApi` | API | 10.0.0 |
+| `Azure.Extensions.AspNetCore.Configuration.Secrets` | API | 1.5.1 (Key Vault config provider, vedi keyvault.md) |
+| `Azure.Identity` | API | 1.21.0 (credential esplicite per il vault; allineata a Infrastructure) |
 | `Scalar.AspNetCore` | API | 2.6.0 |
 | `Microsoft.Extensions.Caching.Hybrid` | Application | 10.0.0 |
 | `Microsoft.EntityFrameworkCore` | Infrastructure | 10.0.0 |
@@ -77,6 +79,17 @@ Va in `src/WebApiPlayground.Api/appsettings.Development.json` (mai in `appsettin
 
 ```json
 { "ConnectionStrings": { "Default": "Server=localhost;Database=WebApiPlayground;Trusted_Connection=True;TrustServerCertificate=True;" } }
+```
+
+## Config Key Vault (sezione `KeyVault`)
+
+Config-gated come la cache: `Uri` vuoto = provider spento (segreti da appsettings/env var).
+Valorizzandolo i secret del vault entrano in `IConfiguration` (nome `--` → `:`) e vincono su
+appsettings/env. Credential esplicita: `ManagedIdentity` (default) | `AzureCli` | `Emulator`
+(solo Development). Vedi `.claude/context/keyvault.md` e `docs/keyvault.md`.
+
+```json
+{ "KeyVault": { "Uri": "", "Credential": "ManagedIdentity", "ManagedIdentityClientId": "", "ReloadInterval": "" } }
 ```
 
 ## Config cache (sezione `Cache`)

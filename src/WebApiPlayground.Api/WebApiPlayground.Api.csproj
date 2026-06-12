@@ -12,6 +12,10 @@
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Mvc" Version="10.0.0" />
     <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.0.0" />
+    <!-- Key Vault config provider: i secret del vault entrano in IConfiguration all'avvio (composition
+         root = Api; regola NetArchTest che lo confina qui). Azure.Identity allineata a Infrastructure. -->
+    <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.1" />
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="FluentValidation" Version="12.1.1" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
     <PackageReference Include="Microsoft.Identity.Web" Version="4.10.0" />

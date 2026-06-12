@@ -31,6 +31,16 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
     /// </summary>
     protected virtual bool DisableOutboxDispatcher => true;
 
+    /// <summary>
+    /// Se <c>true</c> (default) il <c>DbContext</c> dell'app viene ripuntato sul container SQL del test.
+    /// La factory Key Vault (<c>KeyVaultEnabledApiFactory</c>) lo DISATTIVA: la connection string deve
+    /// arrivare all'app SOLO dal vault (emulatore), così l'e2e prova davvero il config provider.
+    /// </summary>
+    protected virtual bool OverrideDbContextWithTestContainer => true;
+
+    /// <summary>Connection string del container SQL del test (per i derivati, es. seed del vault).</summary>
+    protected string SqlConnectionString => _sqlContainer.GetConnectionString();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // Alza i limiti a valori altissimi: il rate limiter è un singleton in-memory condiviso da
@@ -45,13 +55,16 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
 
         builder.ConfigureServices(services =>
         {
-            var descriptor = services.SingleOrDefault(
-                d => d.ServiceType == typeof(DbContextOptions<PlaygroundDbContext>));
-            if (descriptor is not null)
-                services.Remove(descriptor);
+            if (OverrideDbContextWithTestContainer)
+            {
+                var descriptor = services.SingleOrDefault(
+                    d => d.ServiceType == typeof(DbContextOptions<PlaygroundDbContext>));
+                if (descriptor is not null)
+                    services.Remove(descriptor);
 
-            services.AddDbContext<PlaygroundDbContext>(options =>
-                options.UseSqlServer(_sqlContainer.GetConnectionString()));
+                services.AddDbContext<PlaygroundDbContext>(options =>
+                    options.UseSqlServer(_sqlContainer.GetConnectionString()));
+            }
 
             // Di default niente OutboxDispatcher in background nei test: il polling continuo su un DB condiviso
             // fra tutta la collection interferirebbe fra i test (e correrebbe con EnsureCreated allo startup). Il
