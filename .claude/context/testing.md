@@ -27,8 +27,9 @@ Movente: [L25] — un e2e passava sul trasporto sbagliato. Pitfalls: [L27] [L28]
   in PR. La coverage è scopata ai soli assembly `src/*` (runsettings); Domain non compare nei
   report: è fatto di soli POCO auto-property, zero sequence points — è normale, non un buco.
 - **Mutation testing è il gate di QUALITÀ** (la coverage dice solo che il codice è eseguito, non
-  che le asserzioni mordano). Stryker gira: (a) **incrementale su ogni PR** (`--since:origin/<base>`,
-  solo file cambiati, `--break-at 60`); (b) **full SOLO a richiesta** via `workflow_dispatch`
+  che le asserzioni mordano). Stryker gira: (a) **incrementale su ogni PR** (`--since:origin/<base>`, solo file cambiati,
+  **INFORMATIVA**: `--break-at 0`, punteggio nel job summary — una soglia fissa bloccherebbe PR
+  legittime sul codice coperto solo da integration test); (b) **full SOLO a richiesta** via `workflow_dispatch`
   (`mutation-full.yml`) con la soglia `break` ratchet in `stryker-config.json`. **Niente run
   schedulate**: scelta deliberata dell'utente (un cron dimenticato gira per sempre).
   **SEMPRE via `tests/run-mutation.sh`** (una run per layer, test bed = soli unit test): il
@@ -65,7 +66,7 @@ dotnet test tests/WebApiPlayground.Tests/... --settings tests/coverlet.runsettin
 dotnet test tests/WebApiPlayground.IntegrationTests/... --settings tests/coverlet.runsettings --collect "XPlat Code Coverage" --results-directory /tmp/cov
 dotnet tool run reportgenerator -reports:"/tmp/cov/*/coverage.cobertura.xml" -targetdir:/tmp/cov/report -reporttypes:"Html;TextSummary"
 
-# Mutation testing (full locale; incrementale: ./tests/run-mutation.sh --since:main --break-at 60)
+# Mutation testing (full locale; incrementale: ./tests/run-mutation.sh --since:main --break-at 0)
 ./tests/run-mutation.sh
 ```
 
@@ -75,5 +76,6 @@ dotnet tool run reportgenerator -reports:"/tmp/cov/*/coverage.cobertura.xml" -ta
 2. Se introduce un ramo config-gated → **probe strutturale** che il ramo sia DAVVERO attivo nel
    test e2e ([L25]: mai fidarsi del verde senza probe).
 3. Se cambia lo schema → aggiorna `database/` (DACPAC) E il modello EF: la parità rompe se divergono.
-4. La PR deve passare gate ratchet + mutation incrementale: mutanti sopravvissuti nel codice nuovo
-   = asserzioni deboli, rinforzale (non abbassare le soglie).
+4. La PR deve passare il gate coverage ratchet; la mutation incrementale è informativa ma va
+   LETTA: mutanti sopravvissuti nel codice nuovo = asserzioni deboli, rinforzale (non abbassare
+   le soglie). Il gate duro di mutazione è il break ratchet della full manuale.

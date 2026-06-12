@@ -6,7 +6,7 @@
 # proposito: arruolerebbe tutti i test project della solution. Vedi .claude/context/testing.md e [L29].
 #
 #   ./tests/run-mutation.sh                          # run completa (soglia break da stryker-config.json)
-#   ./tests/run-mutation.sh --since:origin/main --break-at 60   # incrementale (PR gate)
+#   ./tests/run-mutation.sh --since:origin/main --break-at 0   # incrementale (PR, informativa)
 #
 # Output: report html/json per progetto in tests/WebApiPlayground.Tests/StrykerOutput/ +
 # punteggio COMBINATO in .../StrykerOutput/combined-score.json (usato dal badge in CI).

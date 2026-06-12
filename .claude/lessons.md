@@ -829,8 +829,10 @@ test bed = SOLI unit test), `mutate` esclude `ApiVersioningExtensions.cs` (inter
 COMBINATO calcolato dai `mutation-report.json` (scritto in `combined-score.json`, usato dal badge).
 L'espressione con la pattern-variable è stata riscritta in forma equivalente senza dichiarazione
 (`ex.RetryAfter > TimeSpan.Zero ? ex.RetryAfter!.Value : fallback`). In CI: incrementale su PR
-(`--since`, `--break-at 60`), full solo manuale (`mutation-full.yml`, soglia ratchet in config) —
-niente schedule per scelta.
+(`--since`, **informativa** con `--break-at 0`: il primo collaudo ha mostrato che una soglia fissa
+boccia le PR che toccano codice coperto solo da integration test — e una PR che cambia i csproj fa
+considerare a `--since` "tutto cambiato"), full solo manuale (`mutation-full.yml`, soglia ratchet
+in config) — niente schedule per scelta.
 
 ---
 

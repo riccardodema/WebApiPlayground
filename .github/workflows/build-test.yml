@@ -126,14 +126,23 @@ jobs:
           name: coverage-report
           path: CoverageReport
 
-      # ---- Mutation testing (Stryker.NET, INCREMENTALE) ------------------------
-      # Solo sui file cambiati rispetto al target della PR: verifica che i test del codice toccato
-      # uccidano i mutanti. Run per-progetto orchestrate da tests/run-mutation.sh (mai solution
-      # mode: arruolerebbe anche gli integration test coi container — [L29]). La run completa è
-      # manuale (mutation-full.yml) — niente schedulazioni.
-      - name: Mutation tests (changed files only)
+      # ---- Mutation testing (Stryker.NET, INCREMENTALE, informativa) -----------
+      # Solo sui file cambiati rispetto al target della PR (run per-progetto via
+      # tests/run-mutation.sh — mai solution mode, [L29]). INFORMATIVA (--break-at 0), non gate:
+      # gran parte di Infrastructure/Api è coperta da integration test (fuori dal test bed di
+      # mutazione per design) → una soglia fissa bloccherebbe PR legittime su quel codice. I gate
+      # DURI sono il coverage ratchet (sopra) e il break ratchet della full manuale
+      # (mutation-full.yml). Punteggio nel job summary + report come artifact.
+      - name: Mutation tests (changed files only, informational)
         if: ${{ inputs.mutation-incremental && github.base_ref != '' }}
-        run: ./tests/run-mutation.sh --since:origin/${{ github.base_ref }} --break-at 60
+        run: |
+          ./tests/run-mutation.sh --since:origin/${{ github.base_ref }} --break-at 0
+          {
+            echo "### Mutation testing (incrementale, informativa)"
+            echo '```json'
+            cat tests/WebApiPlayground.Tests/StrykerOutput/combined-score.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload mutation report
         if: ${{ always() && inputs.mutation-incremental }}
