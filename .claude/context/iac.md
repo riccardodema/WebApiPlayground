@@ -47,7 +47,9 @@ Entrambi girano nei workflow `infra` (GH + ADO).
 - **Firewall default-deny**: `networkAcls.defaultAction = 'Deny'` + bypass `AzureServices`;
   IP/CIDR ammessi via parametro `allowedIpAddresses` (o Private Endpoint).
 - **Nessun secret nell'IaC**: si crea solo il vault + RBAC. Il valore della connection
-  string si imposta fuori (`az keyvault secret set`). Nessun segreto transita per ARM.
+  string si imposta fuori, con `./infra/set-secrets.sh <Nome--Secret>` (wrapper di
+  `az keyvault secret set`, valore da prompt silenzioso; naming `--`→`:` = contratto col
+  config provider dell'app, vedi `keyvault.md`). Nessun segreto transita per ARM.
 - **Monitoring**: modulo `monitoring.bicep` (Log Analytics) + diagnostic settings sul KV
   (`categoryGroup audit`). Attivo di default (`enableMonitoring`), condizionale. Copre la
   regola PSRule `Azure.KeyVault.Logs`. Dettagli e KQL in `docs/monitoring.md`.
@@ -89,6 +91,8 @@ AZURE_SUBSCRIPTION_ID=<sub> ./infra/deploy.sh deploy
 
 ## Integrazione App Service → Key Vault
 
-Managed identity dell'app passata come `appPrincipalId` (→ Key Vault Secrets User),
-app setting `ConnectionStrings__Default = @Microsoft.KeyVault(SecretUri=...)`. Toglie il
-secret anche dalle pipeline `cd.yml`/`ci-cd.yml`. Passo successivo, non ancora cablato.
+Managed identity dell'app passata come `appPrincipalId` (→ Key Vault Secrets User). L'app
+legge i secret a runtime col **config provider in-app** (`KeyVault__Uri` = output `keyVaultUri`,
+credential ManagedIdentity — vedi `keyvault.md`); le KV references
+(`@Microsoft.KeyVault(SecretUri=...)`) restano l'alternativa di piattaforma. Toglie il secret
+anche dalle pipeline `cd.yml`/`ci-cd.yml`. Cablatura CD = passo successivo.

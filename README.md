@@ -324,7 +324,9 @@ Azure resources are **versioned in the repo** as [Bicep](https://learn.microsoft
 with **what-if** as a mandatory preview and automated tests (Bicep build/lint, **xUnit** unit
 tests over the compiled ARM, and **PSRule for Azure**). The foundation is an **Azure Key Vault** (RBAC auth, soft-delete, purge protection in
 prod) where the DB connection string lives in production — created by IaC, with the secret
-*value* set outside it so no secret ever flows through ARM deployments. See [infra/README.md](infra/README.md).
+*value* set outside it (`./infra/set-secrets.sh`) so no secret ever flows through ARM deployments;
+the app reads it at startup via the [Key Vault config provider](docs/keyvault.md). See
+[infra/README.md](infra/README.md).
 
 ```bash
 AZURE_SUBSCRIPTION_ID='...' ./infra/deploy.sh          # what-if (preview the diff)
@@ -353,19 +355,23 @@ change how tests run.
   fails).
 - **`docker compose up` = full local stack.** API + **SQL Server** + the **schema published from the DACPAC**
   (a one-shot `db-migrations` service that reuses the same `deploy.sh` as CI — "DACPAC is the source of
-  truth") + the **official Azure Service Bus emulator** — wired with health checks and ordered startup. No
-  local SQL Server install, no manual connection string — the onboarding is genuinely one command. With the
-  emulator in the stack, the **transactional outbox runs over the real broker** locally (publisher → queue →
-  decoupled consumer → popularity snapshot), not the in-process fallback. Optional **Redis** (L2 cache +
-  backplane) and **Aspire Dashboard** (OTLP telemetry) are off by default behind compose override files.
+  truth") + the **official Azure Service Bus emulator** + a **Key Vault emulator** — wired with health checks
+  and ordered startup. No local SQL Server install, no manual connection string — the onboarding is genuinely
+  one command. With the emulators in the stack, the **transactional outbox runs over the real broker** locally
+  (publisher → queue → decoupled consumer → popularity snapshot) and the **secrets come from the vault**
+  (no connection strings in the api environment — see [Secrets](#secrets--azure-key-vault-config-provider)).
+  Optional **Redis** (L2 cache + backplane) and **Aspire Dashboard** (OTLP telemetry) are off by default
+  behind compose override files.
 - **What it gives over Testcontainers**: a deploy-ready artifact (same image dev → CI → prod, the base for
   App Service for Containers / Kubernetes / Container Apps), and a way to exercise the **real** app against
   real dependencies — not the test stubs (auth, Open Library) — clicking through Scalar against a live stack.
 - **Explicit fail-fast on config.** Outside Development the app **refuses to start** if mandatory settings are
   missing, listing **exactly** which ones (and their env-var form) — `ConnectionStrings:Default`,
   `AzureAd:ClientId/TenantId/Audience`, `ServiceBus:FullyQualifiedNamespace` (the broker is the real outbox
-  transport in Production). Locally compose runs in Development, so the dev auth bypass + Scalar work with zero
-  config; the image defaults to Production (12-factor).
+  transport in Production) — and pointing out that secrets can also come from **Key Vault** (`KeyVault__Uri`).
+  The startup exit code is **non-zero on refusal**, so orchestrators and CI actually notice. Locally compose
+  runs in Development, so the dev auth bypass + Scalar work with zero config; the image defaults to
+  Production (12-factor).
 - **Tested as code.** `tests/WebApiPlayground.DockerTests` holds static **contract tests** (non-root chiseled
   base, no plaintext secrets, port 8080, health check, migrations-before-api — fast, no Docker) plus a **live
   smoke test** that builds the image, starts the container and asserts `GET /health/live` — which doubles as
@@ -380,6 +386,32 @@ docker compose -f docker-compose.yml -f docker-compose.aspire.yml up   # + OTLP 
 > On Apple Silicon (arm64) the SQL Server and Service Bus emulator images run under emulation (`platform: linux/amd64`).
 
 Details and the Testcontainers-vs-image-vs-compose distinction: [`.claude/context/docker.md`](.claude/context/docker.md).
+
+## Secrets — Azure Key Vault config provider
+
+Secrets (the DB connection string, and locally the Service Bus emulator one) are loaded **from Azure
+Key Vault at startup** via the official configuration provider — **config-gated** on `KeyVault:Uri`
+(empty = off, like Redis/OTLP/Service Bus). The provider is added **last** (vault values win over
+appsettings/env vars) and **before** the startup fail-fast (vault secrets satisfy the validator).
+
+- **Secretless first, vault for the rest.** Service Bus stays secretless (managed identity + namespace
+  FQDN); `AzureAd` values are identifiers, not secrets — only *real* secrets go in the vault
+  (`ConnectionStrings--Default`; `--` maps to `:` in .NET configuration).
+- **Explicit credentials per environment** (no `DefaultAzureCredential` chain): `ManagedIdentity`
+  (default, user-assigned supported), `AzureCli` (local runs against the real vault), `Emulator`
+  (**Development only**, enforced with a talking error).
+- **Talking fail-fast.** If the vault is configured but unreachable/forbidden, the app refuses to start
+  and the fatal log says *where* it pointed, *which* credential, the *probable causes* (missing
+  `Key Vault Secrets User` RBAC role, firewall default-deny, no `az login`, …) and the remedy.
+- **Local = emulator, real = same mechanics.** `docker compose up` runs the community
+  [Azure Key Vault emulator](https://github.com/james-gould/azure-keyvault-emulator) (pinned image,
+  one-shot TLS cert + REST seed jobs; no third-party NuGet, self-signed trust scoped to the dev client
+  only). Against the real vault: `./infra/deploy.sh deploy` → `./infra/set-secrets.sh
+  ConnectionStrings--Default` → set `KeyVault__Uri`. Integration tests boot the app with the connection
+  string **only in the vault** (Testcontainers emulator) — switching to the real vault changes
+  configuration, not code.
+
+Full guide (why Key Vault, setup, troubleshooting): [`docs/keyvault.md`](docs/keyvault.md).
 
 ## Testing
 
@@ -452,7 +484,9 @@ Everything runs in containers, so you **don't need .NET or SQL Server installed*
    ```
 
    Compose starts SQL Server, **waits until it's healthy**, runs the one-shot **`db-migrations`** service
-   that publishes the schema + seed data from the DACPAC, **then** starts the API.
+   that publishes the schema + seed data from the DACPAC, seeds the **Key Vault emulator** with the
+   stack's secrets (one-shot `keyvault-certs` + `keyvault-seed` jobs — no connection strings in the api
+   environment), **then** starts the API.
 
 4. **Use it** — the API runs in **Development**, so the dev auth bypass is on (no token needed):
 
@@ -483,9 +517,11 @@ Everything runs in containers, so you **don't need .NET or SQL Server installed*
 - *`port is already allocated` on 1433* — a local SQL Server is using it; set `SQL_HOST_PORT=14330` in `.env`
   (the API reaches the DB over the internal compose network, so this only changes the host-side port).
 - *Apple Silicon (arm64)* — the SQL Server image is amd64-only and runs under emulation
-  (`platform: linux/amd64`); the first start is a little slower.
-- *Running the image in Production* — it intentionally **fails fast** unless you pass
-  `ConnectionStrings__Default` and `AzureAd__ClientId/TenantId/Audience`, listing exactly what's missing.
+  (`platform: linux/amd64`); the first start is a little slower. The Key Vault emulator has a native
+  arm64 tag — see `.env.example`.
+- *Running the image in Production* — it intentionally **fails fast** (non-zero exit) unless you pass
+  the secrets (`ConnectionStrings__Default`, … or a `KeyVault__Uri` to load them from) and
+  `AzureAd__ClientId/TenantId/Audience`, listing exactly what's missing.
 
 ### Option B — with the .NET SDK (your own SQL Server)
 

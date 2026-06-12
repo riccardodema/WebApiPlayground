@@ -67,10 +67,19 @@ con `depends_on … service_completed_successfully`.
   `db` come backend SQL (`SQL_SERVER=db`, l'emulatore lo richiede) → niente terzo container. `platform:
   linux/amd64`. L'app vi punta via `ServiceBus__ConnectionString` (host = nome servizio, `UseDevelopmentEmulator=true`).
   Vedi `outbox.md` (sez. PR-2) e [L24].
-- **`db-migrations`**: build di `database/`, `DB_CONNECTION` verso `db`, parte **dopo** `db` *healthy*.
-- **`api`**: build del `Dockerfile` di root, `8080:8080`, attende `db` *healthy*, `db-migrations`
-  *completed_successfully* e `servicebus` *started* → all'avvio dell'API schema e broker ci sono (il consumer
-  riprova comunque lo start finché l'emulatore non è pronto).
+- **`keyvault`** (+ job one-shot **`keyvault-certs`** e **`keyvault-seed`**): **emulatore community di Azure
+  Key Vault** (immagine **pinnata** `jamesgoulddev/azure-keyvault-emulator:3.1.0`; tag/platform overridabili da
+  `.env` per arm64 nativo) = la **fonte dei segreti** dello stack. `keyvault-certs` genera il cert TLS
+  self-signed nel volume (l'SDK Azure pretende https; PFX password `emulator` = contratto dell'immagine),
+  `keyvault-seed` fa il PUT REST dei secret (connection string di DB ed emulatore ASB — **non più nell'env
+  dell'api**), l'api li carica all'avvio col config provider (`KeyVault__Uri=https://keyvault:4997`,
+  `KeyVault__Credential=Emulator`, solo Development). Vedi `keyvault.md`, `docs/keyvault.md` e [L26].
+- **`db-migrations`**: build di `database/`, `DB_CONNECTION` verso `db`, parte **dopo** `db` *healthy*
+  (sqlpackage non parla col vault: la sua connection string resta env, parametrizzata da `.env`).
+- **`api`**: build del `Dockerfile` di root, `8080:8080`, attende `db` *healthy*, `db-migrations` e
+  `keyvault-seed` *completed_successfully* (i segreti devono essere nel vault PRIMA dello startup) e
+  `servicebus` *started* → all'avvio dell'API schema, segreti e broker ci sono (il consumer riprova comunque
+  lo start finché l'emulatore non è pronto).
 
 ```bash
 cp .env.example .env            # imposta MSSQL_SA_PASSWORD (password "forte")

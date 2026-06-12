@@ -58,7 +58,9 @@ public static class StartupConfigurationValidator
             $"Impostare le seguenti chiavi prima di avviare l'app:{Environment.NewLine}" +
             string.Join(Environment.NewLine, lines) + Environment.NewLine +
             "In Development (ASPNETCORE_ENVIRONMENT=Development) sono opzionali: connection string da " +
-            "appsettings.Development.json e autenticazione in BYPASS di sviluppo.";
+            "appsettings.Development.json e autenticazione in BYPASS di sviluppo." + Environment.NewLine +
+            "I valori SEGRETI (connection string ecc.) possono anche arrivare da Azure Key Vault: " +
+            "impostare KeyVault:Uri (env: KeyVault__Uri) e l'app li carica dal vault all'avvio. Vedi docs/keyvault.md.";
     }
 
     /// <summary>Forma <i>environment variable</i> di una chiave di config: separatore <c>:</c> → <c>__</c>.</summary>

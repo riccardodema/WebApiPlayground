@@ -139,18 +139,23 @@ e l'environment `production`) per attivare il deploy reale. Setup OIDC: vedi
 
 ## Impostare il valore del secret (fuori dall'IaC)
 
-L'IaC crea il vault ma **non** il valore della connection string. Una volta deployato il
-vault, impostalo con l'identità che ha il ruolo *Key Vault Secrets Officer*:
+L'IaC crea il vault ma **non** il valore della connection string. Una volta deployato il vault,
+usa [`set-secrets.sh`](set-secrets.sh) (wrapper di `az keyvault secret set`: scopre il vault dal
+resource group, chiede il valore con un prompt **silenzioso** — mai in argv/history):
 
 ```bash
-az keyvault secret set \
-  --vault-name <nome-key-vault> \
-  --name Sql-ConnectionString \
-  --value 'Server=tcp:...;Authentication=Active Directory Default;Database=...;'
+AZURE_SUBSCRIPTION_ID='<sub>' ./infra/set-secrets.sh ConnectionStrings--Default
 ```
 
-> Il firewall è **default-deny**: per scrivere il secret devi essere su un IP consentito
-> (`allowedIpAddresses`), dietro un Private Endpoint, o eseguire da un contesto Azure trusted.
+Il **naming è il contratto col config provider dell'app**: `--` nel nome del secret = `:` nella
+configuration (`ConnectionStrings--Default` → `ConnectionStrings:Default`). L'app li carica
+all'avvio puntando al vault con `KeyVault__Uri` (output `keyVaultUri` del deploy) — vedi
+[docs/keyvault.md](../docs/keyvault.md). In docker compose l'equivalente è il job one-shot
+`keyvault-seed` contro l'**emulatore** Key Vault.
+
+> Serve il ruolo *Key Vault Secrets Officer* (param `adminPrincipalId`) e il firewall è
+> **default-deny**: per scrivere devi essere su un IP consentito (`allowedIpAddresses`),
+> dietro un Private Endpoint, o in un contesto Azure trusted.
 
 ## Service Bus — trasporto dell'outbox (PR-2)
 
@@ -172,7 +177,7 @@ identity. In locale/test si usa invece l'**emulatore** ufficiale (connection str
 > ⚠️ **Stato:** il modulo è **scritto e validato** con `bicep build` + test IaC (`ServiceBusModuleTests`) e provato
 > **end-to-end con l'emulatore** ASB (vedi i test di integrazione), ma — finché non esiste un profilo/subscription
 > Azure — **non è ancora stato deployato né verificato con `what-if`** contro un namespace reale. È un passo da fare
-> alla creazione dell'account (insieme al deploy del Key Vault e al config provider).
+> alla creazione dell'account (insieme al deploy del Key Vault).
 
 ## Integrazione con l'App Service (passo successivo)
 
@@ -180,12 +185,17 @@ End-state per togliere la connection string anche dalla pipeline `cd.yml`/`ci-cd
 
 1. L'App Service ha una **system-assigned managed identity**.
 2. Il suo `principalId` viene passato all'IaC come `appPrincipalId` → ottiene il ruolo
-   **Key Vault Secrets User** (sola lettura).
-3. L'app setting usa una **Key Vault reference** invece del valore in chiaro:
+   **Key Vault Secrets User** (sola lettura) sul vault e Sender/Receiver sulla coda Service Bus.
+3. L'app setting è solo l'**indirizzo** del vault, mai un segreto:
 
    ```
-   ConnectionStrings__Default = @Microsoft.KeyVault(SecretUri=https://<kv>.vault.azure.net/secrets/Sql-ConnectionString)
+   KeyVault__Uri = https://<kv>.vault.azure.net/
    ```
+
+   e il **config provider in-app** carica i secret all'avvio con la managed identity
+   (vedi [docs/keyvault.md](../docs/keyvault.md)). Alternativa di piattaforma: le **Key Vault
+   references** (`ConnectionStrings__Default = @Microsoft.KeyVault(SecretUri=...)`) — possibili
+   proprio perché il provider è config-gated, ma meno portabili (solo App Service/Functions).
 
 Così il secret non compare né nel repo né nelle pipeline: l'app lo legge a runtime dal
 Key Vault tramite la sua identità. La ri-cablatura del CD è un passo successivo a questa

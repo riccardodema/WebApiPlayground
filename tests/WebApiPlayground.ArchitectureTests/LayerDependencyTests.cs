@@ -142,6 +142,32 @@ public class LayerDependencyTests
         AssertArchitecture(result);
     }
 
+    [Fact]
+    public void Application_should_not_depend_on_key_vault_implementations()
+    {
+        // I secret del vault entrano in IConfiguration nella composition root dell'host (Api):
+        // Application legge la config già risolta e non sa da dove arrivi un valore.
+        var result = Types.InAssembly(ArchitectureRules.ApplicationAssembly)
+            .ShouldNot()
+            .HaveDependencyOnAny(ArchitectureRules.KeyVaultImplementationNamespaces)
+            .GetResult();
+
+        AssertArchitecture(result);
+    }
+
+    [Fact]
+    public void Infrastructure_should_not_depend_on_key_vault_implementations()
+    {
+        // Vale anche per Infrastructure: il bootstrap della configurazione è dell'host (Api), non del
+        // layer di persistenza/trasporto — che consuma IOptions/connection string già risolte.
+        var result = Types.InAssembly(ArchitectureRules.InfrastructureAssembly)
+            .ShouldNot()
+            .HaveDependencyOnAny(ArchitectureRules.KeyVaultImplementationNamespaces)
+            .GetResult();
+
+        AssertArchitecture(result);
+    }
+
     // ---- Infrastructure: Domain + Application, mai API ----------------------
 
     [Fact]

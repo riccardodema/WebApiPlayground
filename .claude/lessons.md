@@ -687,6 +687,65 @@ e i test `tests/.../IntegrationTests/Outbox/` (`OutboxTransportTests` fake + `Se
 
 ---
 
+## [L25] WebApplicationFactory: la config iniettata via `ConfigureAppConfiguration` è INVISIBILE in fase builder
+
+**Approccio errato:** nei test, iniettare con
+`builder.ConfigureAppConfiguration(c => c.AddInMemoryCollection(...))` valori che `Program.cs` legge
+**in fase builder** (prima di `Build()`): `KeyVault:Uri` (letto da `AddKeyVaultIfConfigured`),
+`ServiceBus:ConnectionString` (letto eager da `AddInfrastructure` per scegliere il trasporto).
+
+**Errore:** nessuna eccezione — peggio: il valore risulta vuoto in fase builder, il ramo config-gated
+non si attiva, e il test **passa per il motivo sbagliato** sul percorso di fallback. Il caso reale:
+`ServiceBusOutboxTests` (PR-2) girava sul trasporto **in-process** invece che sull'emulatore ASB —
+verde comunque, perché l'handler a valle è lo stesso. Scoperto qui perché col Key Vault il fallback
+*non* esiste (conn string solo nel vault) → `EnsureCreated` esplodeva con "connection refused" verso
+il DB di `appsettings.Development.json`.
+
+**Causa:** con il minimal hosting la WAF applica i provider registrati via `ConfigureAppConfiguration`
+**dopo** le source aggiunte da `Program.cs`: i valori esistono nella config finale (bene per le
+opzioni bound lazy via `IOptions`), ma non ancora quando il codice del builder li legge.
+
+**Soluzione:** per i valori letti in fase builder usare **`builder.UseSetting("chiave", valore)`**
+(host configuration, applicata prima che `Program.cs` prosegua). E aggiungere un **probe strutturale**
+che renda impossibile il falso verde: `Transport_is_really_Azure_Service_Bus` asserisce che
+`ServiceBusClient` sia registrato; `KeyVaultEnabledApiFactory` disattiva il ripunto del DbContext
+(`OverrideDbContextWithTestContainer => false`) così la conn string può arrivare SOLO dal vault.
+Regola pratica: ogni ramo config-gated testato e2e deve avere un'asserzione che il ramo sia DAVVERO attivo.
+
+---
+
+## [L26] Emulatore Key Vault: TLS obbligatorio con contratto fisso, token non validati, NuGet del progetto da evitare
+
+**Contesto:** il config provider Key Vault va provato e2e senza account Azure → emulatore community
+`james-gould/azure-keyvault-emulator` (Microsoft non ne pubblica uno) in compose e nei test. Vedi
+`.claude/context/keyvault.md` e `docs/keyvault.md`.
+
+**Cose non ovvie (costate tempo o rischio):**
+- **L'SDK Azure pretende HTTPS + challenge verification.** Verso l'emulatore servono ENTRAMBI i bypass
+  nel `SecretClientOptions`: `DisableChallengeResourceVerification = true` (l'URI non è
+  `*.vault.azure.net`) e un transport che accetti il TLS self-signed. Nel codice app sono consentiti
+  SOLO in modalità `Emulator`, che è Development-only (guard con errore parlante).
+- **Contratto TLS dell'immagine fisso:** cert in `/certs/emulator.pfx` con password `emulator`
+  (ENV Kestrel nel Dockerfile dell'emulatore). La password NON è un segreto: è il contratto.
+  SAN del cert: deve includere l'hostname con cui lo si raggiunge (`keyvault` sulla rete compose).
+- **I token non sono validati** (`SignatureValidator` pass-through, niente check su firma/issuer/
+  scadenza): basta un JWT **ben formato** → si minta localmente (in C# e perfino in shell nel seed),
+  zero round-trip e zero dipendenza da endpoint ausiliari (`GET /token` esiste ma è legacy).
+- **I NuGet del progetto emulatore sono comodi ma invasivi:** il loro modulo Testcontainers
+  **installa una CA self-signed nel trust store dell'host** (anche in CI). Evitati: Testcontainers
+  liscio + cert generato per-run (`CertificateRequest` nei test, `openssl` one-shot in compose) +
+  trust scoped al singolo client. Immagine **pinnata** (`3.1.0`; `3.1.0-arm` nativo per Apple
+  Silicon — i due tag sono single-arch: in compose tag e `platform` si cambiano in coppia, vedi
+  `.env.example`).
+- **Bonus fail-fast:** il `catch` di bootstrap in `Program.cs` faceva solo `Log.Fatal` → il processo
+  usciva con **exit code 0** anche quando rifiutava di partire (config mancante, vault giù):
+  aggiunto `Environment.ExitCode = 1`, altrimenti orchestratore/CI vedono un'uscita "pulita".
+
+**Soluzione:** vedi `Api/Configuration/KeyVault/`, `tests/.../IntegrationTests/KeyVault/`
+(`KeyVaultEmulatorContainer` self-made), `docker/keyvault-emulator/*.sh` e i contract test Docker.
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

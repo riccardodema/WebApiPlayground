@@ -91,6 +91,19 @@ public class StartupConfigurationValidatorTests
         Assert.Contains("AzureAd:Audience", ex.Message);
     }
 
+    [Fact]
+    public void Failure_message_mentions_key_vault_as_a_way_to_provide_secrets()
+    {
+        var configuration = BuildConfiguration(); // niente impostato
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => StartupConfigurationValidator.ValidateRequiredConfiguration(configuration, Env(Environments.Production)));
+
+        // Chi legge il fail-fast deve scoprire ANCHE la via Key Vault (non solo le env var).
+        Assert.Contains("Key Vault", ex.Message);
+        Assert.Contains("KeyVault__Uri", ex.Message);
+    }
+
     private static IConfiguration BuildConfiguration(IDictionary<string, string?>? values = null) =>
         new ConfigurationBuilder()
             .AddInMemoryCollection(values ?? new Dictionary<string, string?>())

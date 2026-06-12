@@ -51,6 +51,13 @@ internal static class ArchitectureRules
     internal static readonly string[] MessagingImplementationNamespaces =
         ["Azure.Messaging", "Azure.Identity"];
 
+    // Key Vault config provider: il bootstrap dei secret è una concern della composition root dell'HOST
+    // (Api: è lì che si costruisce IConfiguration). L'SDK Key Vault e il provider di configurazione non
+    // devono trapelare nei layer sottostanti, che leggono la config già risolta via IConfiguration/IOptions
+    // senza sapere se un valore viene dal vault, da una env var o da appsettings.
+    internal static readonly string[] KeyVaultImplementationNamespaces =
+        ["Azure.Security.KeyVault", "Azure.Extensions.AspNetCore.Configuration"];
+
     // Assembly anchor: un tipo pubblico stabile per ciascun layer.
     internal static readonly Assembly DomainAssembly = typeof(Book).Assembly;
     internal static readonly Assembly ApplicationAssembly = typeof(IBookRepository).Assembly;
