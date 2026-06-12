@@ -140,6 +140,39 @@ Gap evidenti per qualunque API di produzione. Bassa complessità, alto segnale.
   fase builder → `ServiceBusOutboxTests` girava in-process; ora `UseSetting` + probe sul trasporto.
   Vedi `.claude/context/keyvault.md`, `docs/keyvault.md`, `[L25]` `[L26]`.
 
+## Tier 6 — Test quality & prossimi passi (post-roadmap iniziale)
+
+Backlog nato dalla retrospettiva a roadmap iniziale completata (giugno 2026), ordinato per
+valore-CV. Il gap più grande del progetto resta **il deploy reale su Azure** (tutto è
+emulato/locale): scala in cima appena esiste una subscription.
+
+- ✅ **Test-quality hardening** — "dimostrare che i test funzionano", non solo averli:
+  **Stryker.NET** (mutation testing: incrementale `--since` su ogni PR + full SOLO manuale via
+  `mutation-full.yml` — niente schedulazioni, scelta utente), **coverage gate RATCHET**
+  (line+branch combinata unit+integration contro `tests/coverage-thresholds.json`, solo in salita;
+  scoperto che `--collect` in CI non raccoglieva nulla: mancava `coverlet.collector`), **badge
+  self-hosted** (branch `badges`, shields-endpoint, no Codecov), **parità DACPAC↔EF** (l'app gira
+  sullo schema deployato dal pacchetto vero via DacFx: confronto colonna-per-colonna + SELECT su
+  ogni entità + write-path; prima i test giravano su uno schema che nessuno deploya — [L27]),
+  **pipeline JWT reale** contro authority OIDC finta in-proc (matrice esaustiva
+  firma/issuer/audience/lifetime/scope/ruoli — [L28]) + colmati i buchi di coverage individuati
+  dalla baseline (v2 endpoints, DLQ poison del consumer ASB, upsert snapshot, FK failure→500,
+  bypass dev, rami del transformer OpenAPI/client popolarità/DI Redis).
+  Vedi `.claude/context/testing.md`.
+- ⬜ **Deploy reale su Azure** *(bloccato dalla creazione dell'account)*: what-if/deploy del Bicep,
+  immagine su GHCR/ACR, **Azure Container Apps**, managed identity vera verso KV+ASB, CD attivo,
+  smoke su namespace/vault reali. Chiude i follow-up di Tier 4/keyvault.
+- ⬜ **Worker service split**: consumer ASB fuori dall'API in un progetto Worker dedicato
+  (predisposto in PR-2): scale-out indipendente, secondo servizio in compose.
+- ⬜ **Keyset (cursor) pagination + SQL performance**: indici motivati, confronto piani, benchmark
+  — la profondità SQL oggi mancante.
+- ⬜ **Supply chain**: Central Package Management (`Directory.Packages.props`), dependabot +
+  CodeQL, scan immagine (Trivy) in CI.
+- ⬜ **OpenAPI contract gate**: snapshot del documento committato + diff in CI che blocca breaking
+  change non dichiarati.
+- ⬜ **Presentazione**: sezione "recruiter tour" + diagramma mermaid nel README, ADR pubblici in
+  `docs/adr/` (ricavati dalle lessons), release/tag `v1.0`.
+
 ---
 
 ## Principi di esecuzione

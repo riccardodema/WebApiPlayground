@@ -28,7 +28,10 @@ public sealed class ExternalServiceUnavailableExceptionHandler(IProblemDetailsSe
         if (exception is not ExternalServiceUnavailableException ex)
             return false; // Non di nostra competenza → prova il prossimo handler (GlobalExceptionHandler).
 
-        var retryAfter = ex.RetryAfter is { } hint && hint > TimeSpan.Zero ? hint : RetryAfterFallback;
+        // Forma senza pattern-variable nell'espressione condizionale: la dichiarazione `is { } hint`
+        // qui dentro manda in crash il rollback dei mutanti di Stryker (ridefinizione di 'hint' non
+        // recuperabile → CompilationException sull'intero run). Semantica identica: null > Zero = false.
+        var retryAfter = ex.RetryAfter > TimeSpan.Zero ? ex.RetryAfter!.Value : RetryAfterFallback;
         var seconds = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds));
         httpContext.Response.Headers.RetryAfter = seconds.ToString(CultureInfo.InvariantCulture);
 

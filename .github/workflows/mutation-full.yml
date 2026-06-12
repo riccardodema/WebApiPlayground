@@ -1,0 +1,76 @@
+# Mutation testing COMPLETA (Stryker.NET) su tutta la solution.
+#
+# SOLO manuale (workflow_dispatch), per scelta deliberata: niente run schedulate su questo
+# repo (una schedule dimenticata gira per sempre). La PR gate esegue invece la variante
+# INCREMENTALE (--since, vedi build-test.yml). La soglia `break` vive in stryker-config.json
+# (ratchet dalla calibrazione, vedi .claude/context/testing.md).
+#
+# Il run pubblica il report HTML come artifact e aggiorna il badge `mutation score` sul
+# branch `badges` (self-hosted, come i badge di coverage in ci-cd.yml).
+name: mutation-full
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-full
+  cancel-in-progress: true
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write             # aggiorna il badge sul branch `badges`
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # Run per-progetto orchestrate dallo script (mai solution mode: arruolerebbe anche gli
+      # integration test coi container — [L29]); calcola anche il punteggio combinato.
+      - name: Mutation tests (full, per-project)
+        run: ./tests/run-mutation.sh
+
+      - name: Upload mutation report (HTML)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report-full
+          path: tests/WebApiPlayground.Tests/StrykerOutput/**/reports
+          if-no-files-found: ignore
+
+      - name: Publish mutation badge to the badges branch
+        run: |
+          set -euo pipefail
+          score=$(jq -r '.score' tests/WebApiPlayground.Tests/StrykerOutput/combined-score.json)
+          color=$(awk -v v="$score" 'BEGIN{ print (v>=80)?"brightgreen":(v>=70)?"green":(v>=60)?"yellowgreen":(v>=50)?"yellow":"red" }')
+          mkdir -p /tmp/badges
+          printf '{"schemaVersion":1,"label":"mutation score","message":"%s%%","color":"%s"}' \
+            "$score" "$color" > /tmp/badges/mutation.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch origin badges 2>/dev/null; then
+            git checkout badges
+          else
+            git checkout --orphan badges
+            git rm -rfq .
+          fi
+          mkdir -p badges
+          cp /tmp/badges/mutation.json badges/
+          git add badges
+          git commit -m "chore(badges): update mutation score badge" || echo "badge unchanged"
+          git push origin badges

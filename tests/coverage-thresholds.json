@@ -1,0 +1,5 @@
+{
+  "//": "Gate RATCHET della coverage (line+branch combinata unit+integration, vedi build-test.yml). I valori partono appena sotto la baseline misurata e possono solo SALIRE: una PR che fa scendere la coverage sotto il gate fallisce la CI. Alzarli quando la coverage cresce stabilmente. Vedi .claude/context/testing.md.",
+  "line": 97.0,
+  "branch": 80.0
+}

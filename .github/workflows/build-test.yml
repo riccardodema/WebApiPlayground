@@ -13,6 +13,13 @@ on:
         description: When true, publishes the app + DACPAC as artifacts for deployment.
         type: boolean
         default: false
+      mutation-incremental:
+        description: >
+          When true (PR gate), runs Stryker.NET mutation testing on the files CHANGED vs the
+          target branch only (fast). The FULL run is manual-only via mutation-full.yml —
+          deliberately no scheduled runs on this repo.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -22,6 +29,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Full history: Stryker --since diffs against the PR target branch.
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
@@ -43,12 +53,15 @@ jobs:
       - name: Build (${{ inputs.build-configuration }})
         run: dotnet build --configuration ${{ inputs.build-configuration }} --no-restore
 
+      # Coverage is collected on the two suites that EXECUTE src code (unit + integration) and
+      # merged below; the runsettings scope it to production assemblies only.
       - name: Unit tests
         run: >
           dotnet test tests/WebApiPlayground.Tests/WebApiPlayground.Tests.csproj
           --configuration ${{ inputs.build-configuration }} --no-build
           --logger "trx;LogFileName=unit.trx"
           --results-directory TestResults
+          --settings tests/coverlet.runsettings
           --collect "XPlat Code Coverage"
 
       # Architecture tests (NetArchTest): fanno rispettare le regole di layering
@@ -68,6 +81,8 @@ jobs:
           --configuration ${{ inputs.build-configuration }} --no-build
           --logger "trx;LogFileName=integration.trx"
           --results-directory TestResults
+          --settings tests/coverlet.runsettings
+          --collect "XPlat Code Coverage"
 
       # Docker tests: contract test statici su Dockerfile/compose + smoke test LIVE che builda
       # l'immagine API e colpisce /health/live (vale anche da validazione del `docker build`).
@@ -78,6 +93,64 @@ jobs:
           --configuration ${{ inputs.build-configuration }} --no-build
           --logger "trx;LogFileName=docker.trx"
           --results-directory TestResults
+
+      # ---- Coverage: merge + RATCHET gate --------------------------------------
+      # Il gate legge le soglie versionate in tests/coverage-thresholds.json: partono dalla
+      # baseline misurata e possono solo salire — una PR che fa scendere la coverage fallisce.
+      - name: Coverage report (merge unit + integration)
+        run: |
+          dotnet tool restore
+          dotnet tool run reportgenerator \
+            -reports:"TestResults/**/coverage.cobertura.xml" \
+            -targetdir:CoverageReport \
+            -reporttypes:"Html;JsonSummary;MarkdownSummaryGithub"
+
+      - name: Coverage gate (ratchet)
+        run: |
+          line=$(jq -r '.summary.linecoverage' CoverageReport/Summary.json)
+          branch=$(jq -r '.summary.branchcoverage' CoverageReport/Summary.json)
+          min_line=$(jq -r '.line' tests/coverage-thresholds.json)
+          min_branch=$(jq -r '.branch' tests/coverage-thresholds.json)
+          echo "Line coverage:   ${line}% (gate: ${min_line}%)"
+          echo "Branch coverage: ${branch}% (gate: ${min_branch}%)"
+          cat CoverageReport/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+          awk -v l="$line" -v ml="$min_line" -v b="$branch" -v mb="$min_branch" \
+            'BEGIN { exit !(l >= ml && b >= mb) }' || {
+            echo "::error::Coverage sotto il gate ratchet (line ${line}% < ${min_line}% oppure branch ${branch}% < ${min_branch}%). Aggiungi test o motiva l'abbassamento in tests/coverage-thresholds.json."
+            exit 1
+          }
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: CoverageReport
+
+      # ---- Mutation testing (Stryker.NET, INCREMENTALE, informativa) -----------
+      # Solo sui file cambiati rispetto al target della PR (run per-progetto via
+      # tests/run-mutation.sh — mai solution mode, [L29]). INFORMATIVA (--break-at 0), non gate:
+      # gran parte di Infrastructure/Api è coperta da integration test (fuori dal test bed di
+      # mutazione per design) → una soglia fissa bloccherebbe PR legittime su quel codice. I gate
+      # DURI sono il coverage ratchet (sopra) e il break ratchet della full manuale
+      # (mutation-full.yml). Punteggio nel job summary + report come artifact.
+      - name: Mutation tests (changed files only, informational)
+        if: ${{ inputs.mutation-incremental && github.base_ref != '' }}
+        run: |
+          ./tests/run-mutation.sh --since:origin/${{ github.base_ref }} --break-at 0
+          {
+            echo "### Mutation testing (incrementale, informativa)"
+            echo '```json'
+            cat tests/WebApiPlayground.Tests/StrykerOutput/combined-score.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload mutation report
+        if: ${{ always() && inputs.mutation-incremental }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report-incremental
+          path: tests/WebApiPlayground.Tests/StrykerOutput/**/reports
+          if-no-files-found: ignore
 
       - name: Upload test results
         if: always()

@@ -426,3 +426,7 @@ infra/reports/
 
 # Tool locali (es. binario Bicep scaricato da infra/tests/install-bicep.sh)
 .tools/
+
+# Output locali dei tool di test-quality (mutation testing, report coverage)
+StrykerOutput/
+CoverageReport/

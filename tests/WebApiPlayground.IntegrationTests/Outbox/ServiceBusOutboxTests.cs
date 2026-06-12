@@ -37,6 +37,12 @@ public sealed class ServiceBusEnabledApiFactory : PlaygroundApiFactory, IAsyncLi
     // Tiene acceso il vero dispatcher: deve pollare l'outbox e PUBBLICARE i messaggi su Service Bus.
     protected override bool DisableOutboxDispatcher => false;
 
+    /// <summary>Connection string dell'emulatore, per i test che parlano col broker direttamente (es. DLQ).</summary>
+    public string BrokerConnectionString => _serviceBus.GetConnectionString();
+
+    /// <summary>Nome della coda usata dal consumer in questi test.</summary>
+    public string QueueName => EmulatorDefaultQueue;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // UseSetting (host configuration), NON ConfigureAppConfiguration: la scelta del trasporto avviene
@@ -154,5 +160,36 @@ public class ServiceBusOutboxTests : IClassFixture<ServiceBusEnabledApiFactory>,
 
         // La riga outbox è stata pubblicata sul broker e marcata processata (consegna durevole all'ASB).
         Assert.True(await AllOutboxProcessedAsync());
+    }
+
+    [Fact]
+    public async Task Malformed_message_is_abandoned_until_it_dead_letters()
+    {
+        // Messaggio "poison" mandato direttamente sulla coda (bypassa l'outbox): il consumer non riesce
+        // a deserializzarlo → Abandon (mai Complete) → il broker lo riconsegna fino a maxDeliveryCount,
+        // poi lo sposta in DEAD-LETTER: il messaggio non va perso né può ciclare per sempre, e la coda
+        // torna pulita per i messaggi buoni. Vedi .claude/context/outbox.md (sez. PR-2).
+        await using var client = new Azure.Messaging.ServiceBus.ServiceBusClient(_factory.BrokerConnectionString);
+
+        var sender = client.CreateSender(_factory.QueueName);
+        var poison = new Azure.Messaging.ServiceBus.ServiceBusMessage(BinaryData.FromString("definitely-not-an-event"))
+        {
+            Subject = "Garbage.Event",
+        };
+        await sender.SendMessageAsync(poison);
+
+        var dlqReceiver = client.CreateReceiver(_factory.QueueName, new Azure.Messaging.ServiceBus.ServiceBusReceiverOptions
+        {
+            SubQueue = Azure.Messaging.ServiceBus.SubQueue.DeadLetter,
+        });
+
+        Azure.Messaging.ServiceBus.ServiceBusReceivedMessage? dead = null;
+        var deadline = DateTimeOffset.UtcNow + Timeout;
+        while (dead is null && DateTimeOffset.UtcNow < deadline)
+            dead = await dlqReceiver.ReceiveMessageAsync(TimeSpan.FromSeconds(5));
+
+        Assert.NotNull(dead);
+        Assert.Equal("Garbage.Event", dead!.Subject);
+        await dlqReceiver.CompleteMessageAsync(dead); // pulizia: non lasciare il poison nel DLQ condiviso
     }
 }

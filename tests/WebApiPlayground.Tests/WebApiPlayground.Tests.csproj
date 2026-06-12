@@ -8,6 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="10.0.1">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="FluentValidation" Version="12.1.1" />
     <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.Testing" Version="10.6.0" />
@@ -29,6 +33,10 @@
     <ProjectReference Include="..\..\src\WebApiPlayground.Api\WebApiPlayground.Api.csproj" />
     <ProjectReference Include="..\..\src\WebApiPlayground.Application\WebApiPlayground.Application.csproj" />
     <ProjectReference Include="..\..\src\WebApiPlayground.Domain\WebApiPlayground.Domain.csproj" />
+    <!-- Reference DIRETTA (arriverebbe transitiva via Api): Stryker risolve il progetto da mutare
+         solo tra le reference dirette del test project — senza questa la run su Infrastructure
+         esce con "No project found". Vedi .claude/lessons.md [L29]. -->
+    <ProjectReference Include="..\..\src\WebApiPlayground.Infrastructure\WebApiPlayground.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

@@ -7,10 +7,16 @@ in `.azure/` (lo stesso progetto implementa entrambe le piattaforme).
 
 | File | Trigger | Scopo |
 |---|---|---|
-| `build-test.yml` | `workflow_call` (riutilizzabile) | restore + build (solution, incl. DACPAC) + unit & integration test; opzionalmente produce gli artifact `app` e `database` |
-| `pr-validation.yml` | `pull_request` → `main` | Gate PR: chiama `build-test`. Da impostare come **required check** |
-| `ci-cd.yml` | `push` → `main` / `workflow_dispatch` | `build-test` (con artifact) → job **`deploy`** gated dall'environment `production` |
+| `build-test.yml` | `workflow_call` (riutilizzabile) | restore + build (solution, incl. DACPAC) + tutti i test con **coverage gate ratchet** (`tests/coverage-thresholds.json`) e, su richiesta del chiamante, **mutation testing incrementale** (Stryker `--since`); opzionalmente produce gli artifact `app` e `database` |
+| `pr-validation.yml` | `pull_request` → `main` | Gate PR: chiama `build-test` con `mutation-incremental: true`. Da impostare come **required check** |
+| `ci-cd.yml` | `push` → `main` / `workflow_dispatch` | `build-test` (con artifact) → job **`badges`** (badge coverage self-hosted sul branch `badges`, niente Codecov) → job **`deploy`** gated dall'environment `production` |
+| `mutation-full.yml` | **solo `workflow_dispatch`** | Mutation testing COMPLETA (Stryker.NET, soglia `break` in `stryker-config.json`): report HTML come artifact + badge `mutation score` sul branch `badges`. **Niente schedule per scelta**: una run dimenticata gira per sempre. Vedi [.claude/context/testing.md](../../.claude/context/testing.md) |
 | `infra.yml` | PR/`push` → `main` su `infra/**` | IaC Bicep: job **`validate`** (build/lint + PSRule) → job **`deploy`** (what-if → `az deployment sub create`) gated dall'environment `production`. Vedi [.claude/context/iac.md](../../.claude/context/iac.md) |
+
+> **Branch `badges`**: branch orfano scritto solo dai workflow (`ci-cd.yml`, `mutation-full.yml`)
+> con i JSON shields-endpoint consumati dai badge del README — self-hosted, nessun servizio terzo.
+> Alla prima run su `main` il branch viene creato automaticamente (prima di allora i badge del
+> README risultano "invalid": è atteso).
 
 > **Infra deploy disabilitato finché non configuri Azure.** Il job `deploy` di `infra.yml`
 > ha `if: vars.AZURE_LOCATION != ''`: senza quella variabile è **saltato** (skipped, non
