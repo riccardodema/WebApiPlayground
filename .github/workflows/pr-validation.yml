@@ -22,3 +22,6 @@ concurrency:
 jobs:
   validate:
     uses: ./.github/workflows/build-test.yml
+    with:
+      # Mutation testing incrementale (Stryker --since): solo sui file cambiati dalla PR.
+      mutation-incremental: true

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Impostazioni di raccolta coverage (coverlet.collector), passate a `dotnet test` con l'opzione settings.
+  Misuriamo SOLO il codice di produzione (src/*): test, fixture e codice generato sono esclusi.
+  Il gate in CI ratchet-a sulla line coverage combinata unit+integration: vedi
+  .claude/context/testing.md e .github/workflows/build-test.yml.
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <!-- Solo gli assembly di produzione. -->
+          <Include>[WebApiPlayground.Domain]*,[WebApiPlayground.Application]*,[WebApiPlayground.Infrastructure]*,[WebApiPlayground.Api]*</Include>
+          <!-- Codice generato dal compilatore/source generator (niente logica nostra). -->
+          <ExcludeByAttribute>GeneratedCodeAttribute,CompilerGeneratedAttribute</ExcludeByAttribute>
+          <!-- Stesso hit-file riusato fra i due step di test → i risultati si sommano. -->
+          <DeterministicReport>false</DeterministicReport>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

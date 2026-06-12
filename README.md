@@ -2,6 +2,9 @@
 
 [![CI/CD](https://github.com/riccardodema/WebApiPlayground/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/riccardodema/WebApiPlayground/actions/workflows/ci-cd.yml)
 [![PR Validation](https://github.com/riccardodema/WebApiPlayground/actions/workflows/pr-validation.yml/badge.svg)](https://github.com/riccardodema/WebApiPlayground/actions/workflows/pr-validation.yml)
+![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/riccardodema/WebApiPlayground/badges/coverage.json)
+![Branch coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/riccardodema/WebApiPlayground/badges/branch-coverage.json)
+![Mutation score](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/riccardodema/WebApiPlayground/badges/mutation.json)
 ![.NET](https://img.shields.io/badge/.NET-10-512BD4)
 
 A deliberately small CRUD Web API (books/authors) whose point isn't the domain but the
@@ -430,6 +433,26 @@ Full guide (why Key Vault, setup, troubleshooting): [`docs/keyvault.md`](docs/ke
 ```bash
 dotnet test
 ```
+
+### Test *quality* — proving the tests themselves work
+
+Green tests aren't evidence by themselves (this repo once had an e2e test passing on the wrong
+transport — see lesson `[L25]`). Three mechanisms keep the suite honest:
+
+- **Mutation testing** (**Stryker.NET**): mutates the production code and checks the tests *fail*.
+  Incremental on every PR (changed files only, `--since`), full run **on demand** via the
+  `mutation-full` workflow (deliberately no schedules) — HTML report as artifact, self-hosted
+  `mutation score` badge.
+- **Coverage ratchet gate**: line+branch coverage (unit + integration, merged) is measured on every
+  CI run and gated against [`tests/coverage-thresholds.json`](tests/coverage-thresholds.json) —
+  thresholds start at the measured baseline and can only go *up*. Badges are self-hosted on the
+  `badges` branch (no third-party coverage service).
+- **Structural honesty tests**: the **DACPAC↔EF schema parity suite** boots the app against the
+  schema actually deployed by the DACPAC (DacFx) and compares it column-by-column with the EF model —
+  the rest of the suite uses `EnsureCreated`, which would hide drift. The **real-JWT suite** runs the
+  production `JwtBearer`/Entra pipeline against an in-process **fake OIDC authority** (discovery +
+  JWKS + RSA-signed tokens): signature, issuer, audience, lifetime and scope/role policies are all
+  exercised with an exhaustive 401/403 matrix — none of which the test auth handler could ever prove.
 
 ## CI/CD — two implementations
 

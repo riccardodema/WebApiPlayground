@@ -746,6 +746,94 @@ Regola pratica: ogni ramo config-gated testato e2e deve avere un'asserzione che 
 
 ---
 
+## [L27] Gli integration test giravano su uno schema che nessuno deploya (EnsureCreated ≠ DACPAC)
+
+**Approccio errato:** creare lo schema dei test con `EnsureCreated()` (dal modello EF) e fidarsi,
+mentre compose/CI/produzione pubblicano lo schema dal **DACPAC** (source of truth dichiarato).
+
+**Errore:** nessuno — è questo il problema. Un drift tra modello EF e progetto SQL (colonna
+rinominata solo da una parte, tipo diverso, NOT NULL mancante) lascia la suite **verde** e rompe
+solo l'app vera al primo deploy.
+
+**Causa:** due fonti di schema mai confrontate. Il gotcha era già noto a metà (database.md: "dopo un
+cambio schema migra anche il DB locale"), ma non esisteva un test che lo facesse rispettare.
+
+**Soluzione:** suite di parità dedicata (`tests/.../IntegrationTests/Database/`):
+`DacpacDeployedApiFactory` deploya il pacchetto VERO con **DacFx programmatico**
+(`DacServices.Deploy`, niente sqlpackage da installare; il DACPAC è prodotto dalla build della
+solution) su un database dedicato del container, e l'app ci gira contro (override
+`AppConnectionString`). I test: confronto strutturale colonna-per-colonna (store type +
+nullabilità, normalizzando `timestamp`→`rowversion` e le scale di default tipo
+`datetimeoffset(7)`), una SELECT reale su OGNI entità mappata, il write-path completo (IDENTITY,
+FK, rowversion/If-Match, outbox→snapshot) e la paginazione sul post-deployment seed. Hook
+riusabili in `PlaygroundApiFactory`: `OnSqlContainerStartedAsync` + `AppConnectionString`
+(`EnsureCreated` su uno schema già deployato è un no-op → i due mondi convivono).
+
+---
+
+## [L28] Pipeline JwtBearer VERA con authority OIDC finta: tre trappole di wiring
+
+**Contesto:** tutta la suite usa il `TestAuthHandler` (claim simulati) → firma/issuer/audience/
+lifetime non erano MAI esercitati. `RealJwtAuthTests` fa girare `AddMicrosoftIdentityWebApi` reale
+contro `FakeOidcAuthority` (Kestrel in-proc su loopback: discovery + JWKS + chiave RSA per-run).
+Trappole incontrate:
+
+- **`RequireHttpsMetadata=false` va impostato nello stage `Configure`, NON `PostConfigure`.** Il
+  framework registra un proprio `IPostConfigureOptions<JwtBearerOptions>` che VALIDA il flag e
+  lancia ("Authority must use HTTPS"): registrato prima del nostro, gira prima → l'override in
+  PostConfigure arriverebbe a eccezione già lanciata (sintomo: **500** su ogni richiesta, non 401).
+  Nello stage Configure invece si gira DOPO quello di Identity.Web (ordine di registrazione) e
+  PRIMA dei PostConfigure — posto giusto anche per sostituire l'`AadIssuerValidator` (vuole il
+  metadata Entra reale) con `ValidIssuer` + validatore standard.
+- **Identity.Web rifiuta in AUTENTICAZIONE (401, non 403) i token senza né `scp` né `roles`**: per
+  una web API pretende almeno uno dei due claim. Il 403 "autenticato ma senza permesso" si testa
+  con uno scope insufficiente (read che tenta una write).
+- **`ClockSkew` default = 5 minuti**: i token "scaduti"/"non ancora validi" dei test devono sforare
+  di PIÙ (±30 min), o risultano validi.
+
+Bonus sui retry (test `Retry-After` del client di popolarità): la strategy HTTP di Polly **onora
+`Retry-After` come delay tra i tentativi** → nei test l'header deve essere piccolo, o il
+TotalTimeout scatta prima che l'ultima risposta (quella con l'header) torni al chiamante.
+
+---
+
+## [L29] Stryker.NET: mai solution mode con integration test nella solution, e il rollback che muore sui pattern in espressioni condizionali
+
+**Approccio errato:** `stryker-config.json` con `"solution"` + `"test-projects": [unit]`, contando
+che il filtro limitasse il test bed agli unit test.
+
+**Errore/i (run di calibrazione):**
+1. la run è durata ~50 minuti e i log mostravano 303 test (TUTTA la suite): in solution mode
+   Stryker **arruola ogni test project della solution** (integration coi Testcontainers compresi)
+   nonostante `test-projects`. Effetto collaterale: i test time-sensitive falliscono sotto il
+   carico dei runner paralleli → "X tests are failing. Outcome will be impacted".
+2. `CompilationException: Internal error due to compile error` che ammazza l'intera run: un
+   mutante su `ex.RetryAfter is { } hint && hint > TimeSpan.Zero ? hint : …` produce
+   "variabile 'hint' già definita / non assegnata" e il **rollback non recupera** (bug noto con le
+   pattern-variable dichiarate dentro espressioni condizionali).
+3. `CS9234` sull'**interceptor del source generator OpenAPI** (XmlCommentGenerator): il generatore
+   intercetta la chiamata `AddOpenApi` in `ApiVersioningExtensions.cs` con un checksum del file —
+   mutare QUEL file invalida il checksum e la compilazione mutata esplode (nemmeno il "Safe Mode"
+   di Stryker recupera) → il file intercettato va **escluso dal mutate**.
+4. Run su Infrastructure: "No project found" — Stryker risolve `--project` solo tra le reference
+   **DIRETTE** del test project; Infrastructure arrivava transitiva via Api → aggiunta la
+   ProjectReference esplicita in `WebApiPlayground.Tests.csproj`.
+5. Minori: il config rifiuta chiavi sconosciute (niente commenti `"//"`); un assert sul TIPO
+   esatto dell'implementazione di un package (`RedisCache`) è fragile — sotto la build di Stryker
+   risolve l'internal `RedisCacheImpl` → usare `IsAssignableFrom`; Domain (soli POCO) produce
+   mutanti senza comportamento osservabile → escluso dalla lista, non è un buco.
+
+**Soluzione:** orchestratore **`tests/run-mutation.sh`**: una run per layer
+(Application/Infrastructure/Api; `--project <csproj>`, eseguita dalla dir del progetto unit test →
+test bed = SOLI unit test), `mutate` esclude `ApiVersioningExtensions.cs` (interceptor), punteggio
+COMBINATO calcolato dai `mutation-report.json` (scritto in `combined-score.json`, usato dal badge).
+L'espressione con la pattern-variable è stata riscritta in forma equivalente senza dichiarazione
+(`ex.RetryAfter > TimeSpan.Zero ? ex.RetryAfter!.Value : fallback`). In CI: incrementale su PR
+(`--since`, `--break-at 60`), full solo manuale (`mutation-full.yml`, soglia ratchet in config) —
+niente schedule per scelta.
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

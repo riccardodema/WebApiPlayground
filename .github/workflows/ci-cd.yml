@@ -34,6 +34,50 @@ jobs:
     with:
       upload-artifacts: true
 
+  # Badge di coverage SELF-HOSTED: niente servizi terzi (Codecov & co.) — il job genera due JSON
+  # in formato shields-endpoint dal report di coverage e li committa sul branch `badges` (fuori da
+  # main: nessun trigger di CI, nessun rumore nella history). Il README li consuma via
+  # img.shields.io/endpoint. Vedi .claude/context/testing.md.
+  badges:
+    needs: ci
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write             # push sul branch `badges` (solo questo job ha write)
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download coverage report
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-report
+          path: coverage-report
+
+      - name: Publish coverage badges to the badges branch
+        run: |
+          set -euo pipefail
+          line=$(jq -r '.summary.linecoverage' coverage-report/Summary.json)
+          branch=$(jq -r '.summary.branchcoverage' coverage-report/Summary.json)
+          color() { awk -v v="$1" 'BEGIN{ print (v>=90)?"brightgreen":(v>=80)?"green":(v>=70)?"yellowgreen":(v>=60)?"yellow":"red" }'; }
+          mkdir -p /tmp/badges
+          printf '{"schemaVersion":1,"label":"coverage","message":"%s%%","color":"%s"}' \
+            "$line" "$(color "$line")" > /tmp/badges/coverage.json
+          printf '{"schemaVersion":1,"label":"branch coverage","message":"%s%%","color":"%s"}' \
+            "$branch" "$(color "$branch")" > /tmp/badges/branch-coverage.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch origin badges 2>/dev/null; then
+            git checkout badges
+          else
+            git checkout --orphan badges
+            git rm -rfq .
+          fi
+          cp /tmp/badges/*.json .
+          git add ./*.json
+          git commit -m "chore(badges): update coverage badges" || echo "badges unchanged"
+          git push origin badges
+
   deploy:
     needs: ci
     # Skip the deploy entirely until an Azure target is configured (the `vars`

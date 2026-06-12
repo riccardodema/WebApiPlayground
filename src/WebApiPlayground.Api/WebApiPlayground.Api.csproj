@@ -36,4 +36,17 @@
     <ProjectReference Include="..\WebApiPlayground.Infrastructure\WebApiPlayground.Infrastructure.csproj" />
   </ItemGroup>
 
+  <!-- Solo per le run di MUTATION TESTING (tests/run-mutation.sh esporta DisableOpenApiSourceGenerator=true):
+       il source generator OpenAPI XmlCommentGenerator emette INTERCEPTOR (checksum-based) che la
+       ricompilazione di Stryker non può riprodurre → CS9234 e run abortita. Rimuoverlo qui non cambia
+       nulla per i test (l'arricchimento XML del contratto non è sotto unit test); build normali e
+       runtime restano INVARIATI. Vedi .claude/lessons.md [L29]. -->
+  <Target Name="RemoveOpenApiSourceGeneratorForStryker"
+          BeforeTargets="CoreCompile"
+          Condition="'$(DisableOpenApiSourceGenerator)' == 'true'">
+    <ItemGroup>
+      <Analyzer Remove="@(Analyzer)" Condition="$([System.String]::Copy('%(Analyzer.Identity)').Contains('Microsoft.AspNetCore.OpenApi.SourceGenerators'))" />
+    </ItemGroup>
+  </Target>
+
 </Project>

@@ -41,6 +41,26 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
     /// <summary>Connection string del container SQL del test (per i derivati, es. seed del vault).</summary>
     protected string SqlConnectionString => _sqlContainer.GetConnectionString();
 
+    /// <summary>
+    /// Connection string con cui l'app raggiunge il DB nei test (default: quella del container, DB
+    /// <c>master</c>). La factory DACPAC la ripunta sul database deployato dal pacchetto
+    /// (<c>PlaygroundDatabase</c>) — lo schema che va davvero in produzione.
+    /// </summary>
+    protected virtual string AppConnectionString => SqlConnectionString;
+
+    /// <summary>
+    /// Se <c>true</c> (default) l'autenticazione dell'app è sostituita dal <see cref="TestAuthHandler"/>
+    /// (claim simulati via header, veloce). La factory JWT reale (<c>RealJwtApiFactory</c>) lo DISATTIVA
+    /// per esercitare la pipeline <c>JwtBearer</c>/Entra vera contro un'authority OIDC finta.
+    /// </summary>
+    protected virtual bool UseTestAuthentication => true;
+
+    /// <summary>
+    /// Hook eseguito DOPO l'avvio del container SQL e PRIMA della costruzione dell'host: è il punto
+    /// giusto per preparare il database fuori da EF (es. deploy del DACPAC). Default: no-op.
+    /// </summary>
+    protected virtual Task OnSqlContainerStartedAsync() => Task.CompletedTask;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // Alza i limiti a valori altissimi: il rate limiter è un singleton in-memory condiviso da
@@ -63,7 +83,7 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
                     services.Remove(descriptor);
 
                 services.AddDbContext<PlaygroundDbContext>(options =>
-                    options.UseSqlServer(_sqlContainer.GetConnectionString()));
+                    options.UseSqlServer(AppConnectionString));
             }
 
             // Di default niente OutboxDispatcher in background nei test: il polling continuo su un DB condiviso
@@ -83,10 +103,14 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
             services.AddControllers().AddApplicationPart(typeof(PlaygroundApiFactory).Assembly);
 
             // Sostituisce il JWT Bearer Entra ID con uno schema di test impostato come default:
-            // i test non richiedono un tenant reale e simulano i claim via header.
-            services
-                .AddAuthentication(TestAuthHandler.SchemeName)
-                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
+            // i test non richiedono un tenant reale e simulano i claim via header. La factory JWT
+            // reale lo disattiva (UseTestAuthentication=false) per testare la pipeline Bearer vera.
+            if (UseTestAuthentication)
+            {
+                services
+                    .AddAuthentication(TestAuthHandler.SchemeName)
+                    .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
+            }
 
             // Sostituisce il primary handler del client di popolarità (CONCRETO; l'astrazione è il decoratore
             // di caching) con uno stub di successo: i test dell'endpoint non toccano la rete reale (Open Library).
@@ -119,8 +143,14 @@ public class PlaygroundApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
     {
         await _sqlContainer.StartAsync();
 
+        // Hook per i derivati (es. deploy del DACPAC) PRIMA che l'host si costruisca e che
+        // EnsureCreated guardi il database.
+        await OnSqlContainerStartedAsync();
+
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlaygroundDbContext>();
+        // Se lo schema esiste già (DB deployato dal DACPAC) EnsureCreated è un no-op:
+        // crea le tabelle dal modello EF solo sul database vuoto di default.
         await db.Database.EnsureCreatedAsync();
     }
 
