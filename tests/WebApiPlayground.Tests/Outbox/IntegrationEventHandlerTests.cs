@@ -39,6 +39,25 @@ public class IntegrationEventHandlerTests
             e => e.EnrichAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Fact]
+    public async Task RoutesEnrichment_PropagatesTheCancellationToken()
+    {
+        using var cts = new CancellationTokenSource();
+
+        await _sut.HandleAsync(new PopularityEnrichmentRequested(7, TraceParent: null), cts.Token);
+
+        // Il token NON viene scartato lungo il routing: l'enricher lo riceve (annullabilità end-to-end).
+        _enricher.Verify(e => e.EnrichAsync(7, cts.Token), Times.Once);
+    }
+
+    [Fact]
+    public void Constructor_rejects_missing_dependencies()
+    {
+        var log = NullLogger<IntegrationEventHandler>.Instance;
+        Assert.Throws<ArgumentNullException>(() => new IntegrationEventHandler(null!, log));
+        Assert.Throws<ArgumentNullException>(() => new IntegrationEventHandler(_enricher.Object, null!));
+    }
+
     private sealed record UnroutedEvent : IntegrationEvent
     {
         public override string EventType => "UnroutedEvent";

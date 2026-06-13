@@ -836,6 +836,43 @@ in config) — niente schedule per scelta.
 
 ---
 
+## [L30] Alzare il mutation score da 25% a 82% leggendo il report: comportamento, non implementazione
+
+**Contesto:** dopo aver introdotto Stryker [L29], lo score combinato era ~25%. Obiettivo: ~80%
+scrivendo i test mancanti **a partire dal report dei mutanti** (survived + no-coverage per file/riga),
+testando comportamento e bordi — non l'implementazione.
+
+**Cosa ha funzionato (in ordine di resa):**
+- **`NoCoverage` = codice mai eseguito dagli unit test** → o si scrive il test, o (se è
+  wiring/trasporto) si esclude con motivazione. I due grossi blocchi: repository/processor DB-bound
+  → **SQLite in-memory** nel progetto unit (`SqlitePlaygroundDb`, rowversion neutralizzata: la
+  concorrenza resta agli integration test su SQL vero); i 5 transformer OpenAPI e i middleware
+  (idempotency, correlation, ETag, 503/precondition handler) → unit test diretti col loro contratto.
+- **`Survived` = il codice gira ma nessuna asserzione lo "morde"**. Pattern ricorrenti di mutante
+  sopravvissuto e come ucciderlo *senza* testare l'implementazione:
+  - `ArgumentNullException.ThrowIfNull` nei costruttori (statement→`;`) → un test `Constructor_rejects_missing_dependencies` per classe.
+  - **stringhe di messaggi/diagnostica** (error/ProblemDetails/contratto OpenAPI/nomi metrica) →
+    asserire il TESTO specifico: sono contratto osservabile (il client/operatore ci agisce). NB: due
+    chiavi con la STESSA stringa "perché" (es. i tre claim AzureAd) restano survivor non killabili
+    singolarmente — equivalenti, si accettano.
+  - **boundary** (`length.Max > 0`, `MinLength < 1`, `Count > 0`, `GreaterThan(0)`→`minimum 1`) →
+    Theory sui valori al confine, non nel mezzo.
+  - **`??=` (coalesce-assignment)** sui contenitori OpenAPI → test che i valori PRE-esistenti
+    sopravvivono (append, non replace).
+- **Misurare a ogni giro** (`tests/run-mutation.sh`), leggere SOLO i nuovi survivor, iterare. 5 giri:
+  25.7 → 62.4 → 74.2 → 77.3 → **81.7%** (App 84.8 / Infra 82.6 / Api 80.5), break ratchet alzato a 78.
+
+**Mutanti onestamente NON uccisi (lasciati, documentati):** ref-count interno di `KeyedAsyncLock`
+(nessun comportamento osservabile dall'esterno), versione assembly nelle diagnostics (null-coalescing
+su `AssemblyInformationalVersion`), e i rami TLS dell'emulatore Key Vault (cert self-signed / object
+initializer) che solo l'integration test con l'emulatore vero esercita. Vincere questi richiederebbe
+test sull'implementazione → si accetta lo score < 100, è il punto della mutation testing.
+
+**Esclusioni:** vedi `.claude/context/testing.md` — solo composition root/wiring già coperto da
+integration/IaC/arch test, mai "difficile da testare".
+
+---
+
 <!-- Template per nuove entry:
 ## [L0N] Titolo breve
 

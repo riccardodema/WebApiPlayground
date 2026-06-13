@@ -159,6 +159,12 @@ emulato/locale): scala in cima appena esiste una subscription.
   dalla baseline (v2 endpoints, DLQ poison del consumer ASB, upsert snapshot, FK failure→500,
   bypass dev, rami del transformer OpenAPI/client popolarità/DI Redis).
   Vedi `.claude/context/testing.md`.
+- ✅ **Mutation score 25% → ~82%** — letti i report Stryker, scritti/raffinati gli unit test mancanti
+  (comportamento + edge/boundary, non implementazione): SQLite in-memory per repository/processor
+  DB-bound, unit diretti su 5 transformer OpenAPI + middleware (idempotency/correlation/ETag/handler),
+  service di popolarità (degrade-to-snapshot), ctor-null/diagnostics/contratti d'eccezione. Combinato
+  **81.7%** (App 84.8 / Infra 82.6 / Api 80.5), break ratchet alzato a 78; mutanti residui
+  onestamente non killabili documentati (ref-count interno, versione assembly, TLS emulatore). Vedi [L30].
 - ⬜ **Deploy reale su Azure** *(bloccato dalla creazione dell'account)*: what-if/deploy del Bicep,
   immagine su GHCR/ACR, **Azure Container Apps**, managed identity vera verso KV+ASB, CD attivo,
   smoke su namespace/vault reali. Chiude i follow-up di Tier 4/keyvault.

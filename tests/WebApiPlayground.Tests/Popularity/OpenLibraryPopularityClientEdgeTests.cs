@@ -130,6 +130,68 @@ public class OpenLibraryPopularityClientEdgeTests
     }
 
     [Fact]
+    public async Task Query_includes_the_url_encoded_title_and_a_limit_of_one()
+    {
+        var handler = new StubHttpMessageHandler(_ => StubHttpMessageHandler.Ok(StubHttpMessageHandler.MatchJson));
+        var client = BuildClient(handler);
+
+        await client.GetPopularityAsync("Lord & Rings", null, CancellationToken.None);
+
+        var uri = handler.LastRequestUri!;
+        Assert.Equal("/search.json", uri.AbsolutePath);
+        Assert.Contains("limit=1", uri.Query);                  // una sola riga: prendiamo il primo match
+        Assert.Contains("title=Lord%20%26%20Rings", uri.Query); // '&' e spazio escaped → niente injection/SSRF
+        Assert.DoesNotContain("author=", uri.Query);            // niente autore → niente parametro autore
+    }
+
+    [Fact]
+    public async Task Query_appends_the_author_only_when_provided()
+    {
+        var handler = new StubHttpMessageHandler(_ => StubHttpMessageHandler.Ok(StubHttpMessageHandler.MatchJson));
+        var client = BuildClient(handler);
+
+        await client.GetPopularityAsync("Dune", "Frank Herbert", CancellationToken.None);
+
+        Assert.Contains("author=Frank%20Herbert", handler.LastRequestUri!.Query); // autore presente → URL-encoded
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Blank_author_does_not_add_the_author_parameter(string author)
+    {
+        var handler = new StubHttpMessageHandler(_ => StubHttpMessageHandler.Ok(StubHttpMessageHandler.MatchJson));
+        var client = BuildClient(handler);
+
+        await client.GetPopularityAsync("Dune", author, CancellationToken.None);
+
+        Assert.DoesNotContain("author=", handler.LastRequestUri!.Query); // whitespace ≠ autore
+    }
+
+    [Fact]
+    public async Task Successful_match_is_mapped_into_the_popularity_signals()
+    {
+        var handler = new StubHttpMessageHandler(_ => StubHttpMessageHandler.Ok(StubHttpMessageHandler.MatchJson));
+        var client = BuildClient(handler);
+
+        var result = await client.GetPopularityAsync("Dune", null, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(4.5, result!.AverageRating);   // i campi del JSON OL → BookPopularity
+        Assert.Equal(10, result.RatingsCount);
+        Assert.Equal(155, result.ReadingLogCount);
+    }
+
+    [Fact]
+    public async Task Empty_docs_array_means_no_match_returns_null()
+    {
+        var handler = new StubHttpMessageHandler(_ => StubHttpMessageHandler.Ok(StubHttpMessageHandler.NoMatchJson));
+        var client = BuildClient(handler);
+
+        Assert.Null(await client.GetPopularityAsync("Nonexistent", null, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Missing_retry_after_header_yields_null()
     {
         var handler = StubHttpMessageHandler.Always(HttpStatusCode.ServiceUnavailable);

@@ -69,8 +69,10 @@ jobs:
             git checkout --orphan badges
             git rm -rfq .
           fi
-          mkdir -p badges
-          cp /tmp/badges/mutation.json badges/
-          git add badges
+          # JSON alla RADICE del branch badges (URL puliti, come i badge di coverage in ci-cd.yml);
+          # rimuove anche l'eventuale vecchia sottodir 'badges/' (bug del primo run).
+          git rm -rq --ignore-unmatch badges
+          cp /tmp/badges/mutation.json .
+          git add mutation.json
           git commit -m "chore(badges): update mutation score badge" || echo "badge unchanged"
           git push origin badges

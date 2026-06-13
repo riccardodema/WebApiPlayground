@@ -33,6 +33,17 @@ public class BookPopularityServiceTests
     };
 
     [Fact]
+    public void Constructor_rejects_missing_dependencies()
+    {
+        var log = NullLogger<BookPopularityService>.Instance;
+        Assert.Throws<ArgumentNullException>(() => new BookPopularityService(null!, _client.Object, _snapshots.Object, TimeProvider.System, log));
+        Assert.Throws<ArgumentNullException>(() => new BookPopularityService(_repository.Object, null!, _snapshots.Object, TimeProvider.System, log));
+        Assert.Throws<ArgumentNullException>(() => new BookPopularityService(_repository.Object, _client.Object, null!, TimeProvider.System, log));
+        Assert.Throws<ArgumentNullException>(() => new BookPopularityService(_repository.Object, _client.Object, _snapshots.Object, null!, log));
+        Assert.Throws<ArgumentNullException>(() => new BookPopularityService(_repository.Object, _client.Object, _snapshots.Object, TimeProvider.System, null!));
+    }
+
+    [Fact]
     public async Task ReturnsNull_AndSkipsExternalCall_WhenBookNotFound()
     {
         _repository.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Book?)null);

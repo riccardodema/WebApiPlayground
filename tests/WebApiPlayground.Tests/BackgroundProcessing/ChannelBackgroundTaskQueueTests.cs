@@ -61,4 +61,39 @@ public class ChannelBackgroundTaskQueueTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             async () => await queue.DequeueAsync(cts.Token));
     }
+
+    [Fact]
+    public void Depth_increments_on_successful_enqueue()
+    {
+        var queue = CreateQueue(capacity: 10);
+
+        Assert.Equal(0, queue.Depth);
+        queue.TryEnqueue(1);
+        Assert.Equal(1, queue.Depth); // l'enqueue, non solo il dequeue, muove la profondità
+    }
+
+    [Fact]
+    public void Dropped_enqueue_does_not_change_depth()
+    {
+        var queue = CreateQueue(capacity: 1);
+        queue.TryEnqueue(1);
+
+        Assert.False(queue.TryEnqueue(2)); // drop
+        Assert.Equal(1, queue.Depth);      // un drop NON deve contare come accodato
+    }
+
+    [Theory]
+    [InlineData(0)]   // capacità non valida → floor a 1, niente crash
+    [InlineData(-5)]
+    public void Non_positive_capacity_is_floored_to_one(int capacity)
+    {
+        var queue = CreateQueue(capacity);
+
+        Assert.True(queue.TryEnqueue(1));   // almeno un posto c'è
+        Assert.False(queue.TryEnqueue(2));  // ma uno solo: il floor è 1, non illimitato
+    }
+
+    [Fact]
+    public void Constructor_rejects_null_options() =>
+        Assert.Throws<ArgumentNullException>(() => new ChannelBackgroundTaskQueue<int>(null!));
 }
