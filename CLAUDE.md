@@ -38,6 +38,8 @@
 | Schema DB versionato, SQL project, DACPAC, deploy/seed | `.claude/context/database.md` |
 | Modificare tabelle/schema o allineare entità EF al DB | `.claude/context/database.md` + `.claude/context/conventions.md` |
 | Containerizzazione: Dockerfile multi-stage chiseled non-root, docker-compose (API+SQL+migrations DACPAC, override Redis/Aspire), differenza vs Testcontainers, fail-fast config in Production, smoke test live; arm64 `platform: linux/amd64` | `.claude/context/docker.md` + `.claude/lessons.md` [L23] |
+| Presentazione di alto livello / overview del progetto (sezione "A guided tour" + diagramma mermaid in cima al `README.md`); ADR / decision record (perché di una scelta architetturale) | `README.md` (sez. *A guided tour*) + `docs/adr/` (indice + un file per decisione, ricavati dalle lessons) |
+| **Mantenere doc e codice coerenti**: ogni cambiamento strutturale/comportamentale del codice va propagato a README (tour incluso), `.claude/context/`, ADR e roadmap — devono sempre riflettere l'implementazione reale | tutti i file di doc impattati; vedi feedback memory `feedback_docs_in_sync` |
 
 ## Quick reference
 
