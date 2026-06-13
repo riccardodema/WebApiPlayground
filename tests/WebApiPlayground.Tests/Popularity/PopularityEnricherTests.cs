@@ -97,4 +97,16 @@ public class PopularityEnricherTests
         _snapshots.Verify(
             s => s.UpsertAsync(It.IsAny<BookPopularitySnapshot>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Fact]
+    public void Constructor_rejects_missing_dependencies()
+    {
+        var log = NullLogger<PopularityEnricher>.Instance;
+        var time = TimeProvider.System;
+        Assert.Throws<ArgumentNullException>(() => new PopularityEnricher(null!, _client.Object, _snapshots.Object, time, log));
+        Assert.Throws<ArgumentNullException>(() => new PopularityEnricher(_repository.Object, null!, _snapshots.Object, time, log));
+        Assert.Throws<ArgumentNullException>(() => new PopularityEnricher(_repository.Object, _client.Object, null!, time, log));
+        Assert.Throws<ArgumentNullException>(() => new PopularityEnricher(_repository.Object, _client.Object, _snapshots.Object, null!, log));
+        Assert.Throws<ArgumentNullException>(() => new PopularityEnricher(_repository.Object, _client.Object, _snapshots.Object, time, null!));
+    }
 }

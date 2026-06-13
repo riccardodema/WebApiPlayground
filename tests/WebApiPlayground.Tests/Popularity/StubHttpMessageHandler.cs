@@ -26,6 +26,9 @@ internal sealed class StubHttpMessageHandler : HttpMessageHandler
     /// fail-fast del circuito aperto NO → distingue retry da circuit breaker).</summary>
     public int Invocations => Volatile.Read(ref _invocations);
 
+    /// <summary>URI dell'ultima richiesta ricevuta: per asserire la query string costruita dal client.</summary>
+    public Uri? LastRequestUri { get; private set; }
+
     public StubHttpMessageHandler(Func<int, HttpResponseMessage> responder, TimeSpan? delay = null)
     {
         _responder = responder;
@@ -43,6 +46,7 @@ internal sealed class StubHttpMessageHandler : HttpMessageHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var attempt = Interlocked.Increment(ref _invocations);
+        LastRequestUri = request.RequestUri;
 
         // Task.Delay onora il token: il timeout (per-tentativo o totale) lo cancella → Polly emette TimeoutRejectedException.
         if (_delay > TimeSpan.Zero)

@@ -4,12 +4,24 @@
     "mutate": [
       "**/*.cs",
       "!**/*.generated.cs",
-      "!**/Extensions/ApiVersioningExtensions.cs"
+      "!**/Extensions/ApiVersioningExtensions.cs",
+      "!**/Program.cs",
+      "!**/Persistence/PlaygroundDbContext.cs",
+      "!**/DependencyInjection.cs",
+      "!**/Extensions/OpenTelemetryExtensions.cs",
+      "!**/Extensions/RateLimitingExtensions.cs",
+      "!**/OpenApi/OpenApiTransformerRegistration.cs",
+      "!**/Outbox/ServiceBus/ServiceBusRegistration.cs",
+      "!**/Outbox/ServiceBus/ServiceBusIntegrationEventConsumer.cs",
+      "!**/Outbox/OutboxDispatcher.cs",
+      "!**/HealthChecks/HealthCheckEndpoints.cs",
+      "!**/Outbox/ServiceBus/ServiceBusIntegrationEventPublisher.cs",
+      "!**/Popularity/BookPopularityRegistration.cs"
     ],
     "thresholds": {
       "high": 80,
       "low": 60,
-      "break": 15
+      "break": 78
     },
     "ignore-methods": [
       "*Log*",

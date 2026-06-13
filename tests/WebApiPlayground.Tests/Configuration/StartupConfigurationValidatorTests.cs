@@ -45,6 +45,48 @@ public class StartupConfigurationValidatorTests
     }
 
     [Fact]
+    public void Failure_message_lists_each_required_key_with_its_exact_env_var_form()
+    {
+        var configuration = BuildConfiguration();
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => StartupConfigurationValidator.ValidateRequiredConfiguration(configuration, Env(Environments.Production)));
+
+        // Le chiavi e le loro env var sono il contratto operativo: ogni stringa esatta deve esserci
+        // (i mutanti sulle costanti delle chiavi devono morire, o l'operatore esporterebbe il nome sbagliato).
+        Assert.Contains("ConnectionStrings:Default", ex.Message);
+        Assert.Contains("ConnectionStrings__Default", ex.Message);
+        Assert.Contains("AzureAd:ClientId", ex.Message);
+        Assert.Contains("AzureAd__ClientId", ex.Message);
+        Assert.Contains("AzureAd:TenantId", ex.Message);
+        Assert.Contains("AzureAd__TenantId", ex.Message);
+        Assert.Contains("AzureAd:Audience", ex.Message);
+        Assert.Contains("AzureAd__Audience", ex.Message);
+        Assert.Contains("ServiceBus:FullyQualifiedNamespace", ex.Message);
+        Assert.Contains("ServiceBus__FullyQualifiedNamespace", ex.Message);
+    }
+
+    [Fact]
+    public void Whitespace_only_values_count_as_missing()
+    {
+        // Una env var impostata a " " è un errore di config silenzioso: va trattata come assente.
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:Default"] = "   ",
+            ["AzureAd:ClientId"] = "id",
+            ["AzureAd:TenantId"] = "tenant",
+            ["AzureAd:Audience"] = "aud",
+            ["ServiceBus:FullyQualifiedNamespace"] = "ns",
+        });
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => StartupConfigurationValidator.ValidateRequiredConfiguration(configuration, Env(Environments.Production)));
+
+        Assert.Contains("ConnectionStrings:Default", ex.Message);
+        Assert.DoesNotContain("AzureAd:ClientId", ex.Message); // gli altri ci sono → non elencati
+    }
+
+    [Fact]
     public void Production_with_all_keys_present_does_not_throw()
     {
         var configuration = BuildConfiguration(new Dictionary<string, string?>
@@ -89,6 +131,31 @@ public class StartupConfigurationValidatorTests
         Assert.Contains("AzureAd:ClientId", ex.Message);
         Assert.Contains("AzureAd:TenantId", ex.Message);
         Assert.Contains("AzureAd:Audience", ex.Message);
+    }
+
+    [Fact]
+    public void Failure_message_explains_WHY_each_key_is_needed()
+    {
+        var configuration = BuildConfiguration();
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => StartupConfigurationValidator.ValidateRequiredConfiguration(configuration, Env(Environments.Production)));
+
+        // Il "perché" è parte del contratto del fail-fast: senza, l'operatore sa COSA manca ma non A COSA serve.
+        Assert.Contains("connessione al database SQL Server", ex.Message);
+        Assert.Contains("autenticazione Microsoft Entra ID", ex.Message);
+        Assert.Contains("trasporto outbox su Azure Service Bus (managed identity)", ex.Message);
+        Assert.Contains("Impostare le seguenti chiavi", ex.Message);
+        Assert.Contains("appsettings.Development.json", ex.Message); // e la via d'uscita per il dev locale
+    }
+
+    [Fact]
+    public void Null_arguments_are_rejected()
+    {
+        Assert.Throws<ArgumentNullException>(
+            () => StartupConfigurationValidator.ValidateRequiredConfiguration(null!, Env(Environments.Production)));
+        Assert.Throws<ArgumentNullException>(
+            () => StartupConfigurationValidator.ValidateRequiredConfiguration(BuildConfiguration(), null!));
     }
 
     [Fact]

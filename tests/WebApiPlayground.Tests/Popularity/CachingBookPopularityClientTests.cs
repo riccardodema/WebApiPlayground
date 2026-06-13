@@ -158,4 +158,30 @@ public class CachingBookPopularityClientTests
         var (sut, _) = CreateSut();
         Assert.Equal("Open Library", sut.SourceName);
     }
+
+    [Fact]
+    public async Task BlankTitle_BypassesCache_AndCallsInner()
+    {
+        var (sut, inner) = CreateSut();
+        inner.Setup(c => c.GetPopularityAsync("   ", null, It.IsAny<CancellationToken>())).ReturnsAsync((BookPopularity?)null);
+
+        // Niente da cercare: passa diretto all'inner (nessuna chiave di cache costruita).
+        await sut.GetPopularityAsync("   ", null, CancellationToken.None);
+
+        inner.Verify(c => c.GetPopularityAsync("   ", null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void Constructor_rejects_missing_dependencies()
+    {
+        var inner = new Mock<IBookPopularityClient>().Object;
+        var cache = new FusionCache(Options.Create(new FusionCacheOptions()));
+        var monitor = new Mock<IOptionsMonitor<BookPopularityOptions>>().Object;
+        var log = NullLogger<CachingBookPopularityClient>.Instance;
+
+        Assert.Throws<ArgumentNullException>(() => new CachingBookPopularityClient(null!, cache, monitor, log));
+        Assert.Throws<ArgumentNullException>(() => new CachingBookPopularityClient(inner, null!, monitor, log));
+        Assert.Throws<ArgumentNullException>(() => new CachingBookPopularityClient(inner, cache, null!, log));
+        Assert.Throws<ArgumentNullException>(() => new CachingBookPopularityClient(inner, cache, monitor, null!));
+    }
 }

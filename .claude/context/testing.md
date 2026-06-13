@@ -35,11 +35,18 @@ Movente: [L25] — un e2e passava sul trasporto sbagliato. Pitfalls: [L27] [L28]
   **SEMPRE via `tests/run-mutation.sh`** (una run per layer, test bed = soli unit test): il
   solution mode arruolerebbe TUTTI i test project — integration coi container, ore di run e
   flakiness — vedi [L29]. Il codice coperto solo da integration appare come `NoCoverage`.
-  **Calibrazione (giu 2026):** Application 50.4%, Infrastructure 22.2%, Api 21.8% → combinato
-  **25.7%**. I punteggi bassi su Infra/Api NON sono test deboli: sono i mutanti `NoCoverage` del
-  codice coperto solo dagli integration test (fuori dal test bed per design). `break` ratchet
-  = 15 (sotto il minimo per-progetto, si applica PER RUN): alzarlo man mano che crescono gli
-  unit test, mai abbassarlo.
+  **Score (giu 2026):** Application 84.8%, Infrastructure 82.6%, Api 80.5% → combinato **81.7%**
+  (564/690), partendo da 25.7% — vedi [L30] per la strategia di rinforzo (comportamento, non
+  implementazione). `break` ratchet = **78** (sotto il minimo per-progetto, si applica PER RUN):
+  alzarlo man mano che cresce, mai abbassarlo.
+- **Cosa è ESCLUSO dalla mutazione (e perché), in `stryker-config.json` `mutate`:** composition
+  root / wiring dichiarativo già coperto da integration/IaC/arch test e non unit-testabile senza
+  accoppiarsi all'implementazione del bootstrap — `Program.cs`, `PlaygroundDbContext`
+  (OnModelCreating), `DependencyInjection`, le `*Registration`/`*Extensions` di registrazione, il
+  consumer/publisher Service Bus e l'`OutboxDispatcher` (trasporto, esercitato dall'emulatore negli
+  integration test), gli endpoint health, e `ApiVersioningExtensions`/`*.generated.cs`
+  (interceptor del source generator OpenAPI — [L29]). Escludere ALTRO richiede la stessa
+  giustificazione: "wiring, coperto altrove", mai "difficile da testare".
 - **Badge self-hosted, niente Codecov**: job `badges` (ci-cd) e mutation-full scrivono JSON
   shields-endpoint sul branch `badges` (orfano, fuori da main → niente trigger/rumore); il README
   li consuma via `img.shields.io/endpoint`. Nessun report a servizi terzi, nessun token extra.

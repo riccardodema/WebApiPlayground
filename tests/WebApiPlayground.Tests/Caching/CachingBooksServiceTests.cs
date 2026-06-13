@@ -40,6 +40,14 @@ public class CachingBooksServiceTests
         new() { PageNumber = pageNumber, PageSize = pageSize, SortBy = "id", SortDir = "asc" };
 
     [Fact]
+    public void Constructor_rejects_missing_dependencies()
+    {
+        Assert.Throws<ArgumentNullException>(() => new CachingBooksService(null!, _cache, NullLogger<CachingBooksService>.Instance));
+        Assert.Throws<ArgumentNullException>(() => new CachingBooksService(_innerMock.Object, null!, NullLogger<CachingBooksService>.Instance));
+        Assert.Throws<ArgumentNullException>(() => new CachingBooksService(_innerMock.Object, _cache, null!));
+    }
+
+    [Fact]
     public async Task GetBookByIdAsync_SecondCall_IsServedFromCache()
     {
         _innerMock.Setup(s => s.GetBookByIdAsync(1))

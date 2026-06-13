@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Diagnostics.Metrics.Testing;
 using WebApiPlayground.Application.Diagnostics;
 using Xunit;
@@ -41,5 +43,43 @@ public class BooksDiagnosticsTests
         var measurements = collector.GetMeasurementSnapshot();
         Assert.True(measurements.Count >= 2);
         Assert.All(measurements, m => Assert.Equal(1, m.Value));
+    }
+
+    [Fact]
+    public void BooksCreated_counter_declares_unit_and_description()
+    {
+        Instrument? found = null;
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == BooksDiagnostics.MeterName
+                    && instrument.Name == BooksDiagnostics.BooksCreatedCounterName)
+                    found = instrument;
+            },
+        };
+        listener.Start();
+        BooksDiagnostics.RecordBookCreated(); // forza la pubblicazione dell'instrument
+
+        Assert.NotNull(found);
+        Assert.Equal("{book}", found!.Unit);
+        Assert.False(string.IsNullOrWhiteSpace(found.Description));
+    }
+
+    [Fact]
+    public void StartCreateBookActivity_uses_the_declared_name_when_listened()
+    {
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == BooksDiagnostics.ActivitySourceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        using var activity = BooksDiagnostics.StartCreateBookActivity();
+
+        Assert.NotNull(activity);
+        Assert.Equal(BooksDiagnostics.CreateBookActivityName, activity!.OperationName);
+        Assert.Equal(ActivityKind.Internal, activity.Kind);
     }
 }
