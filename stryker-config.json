@@ -19,8 +19,8 @@
       "!**/Popularity/BookPopularityRegistration.cs"
     ],
     "thresholds": {
-      "high": 80,
-      "low": 60,
+      "high": 90,
+      "low": 78,
       "break": 78
     },
     "ignore-methods": [
