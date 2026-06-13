@@ -29,39 +29,62 @@ dependencies point inward** — the Domain knows nothing about the web or the da
 flowchart TB
     Client(["HTTP client"])
 
-    subgraph Api["Api — HTTP pipeline and composition root"]
-        Pipeline["CorrelationId · Entra JWT auth · Rate limiting<br/>Idempotency · ETag/concurrency · ProblemDetails"]
-        Controllers["Controllers v1 / v2 · OpenAPI + Scalar"]
+    subgraph Api["Api · HTTP and composition root"]
+        Pipeline["Middleware pipeline<br/>CorrelationId · Auth · Rate-limit<br/>Idempotency · ETag · ProblemDetails"]
+        Controllers["Controllers v1 / v2<br/>OpenAPI + Scalar"]
     end
 
-    subgraph Application["Application — use cases"]
-        Services["Services · DTOs · Validation · Caching decorator"]
+    subgraph Application["Application · use cases"]
+        Services["Services · DTOs<br/>Validation · Caching decorator"]
     end
 
     subgraph Domain["Domain"]
-        Entities["Entities — pure model, zero dependencies"]
+        Entities["Entities<br/>pure model, zero dependencies"]
     end
 
-    subgraph Infrastructure["Infrastructure — adapters"]
-        Repositories["EF Core repositories"]
-        Outbox["Transactional outbox + dispatcher"]
-        Popularity["Resilient Open Library client (Polly)"]
+    subgraph Infrastructure["Infrastructure · adapters"]
+        Repositories["EF Core<br/>repositories"]
+        Outbox["Transactional outbox<br/>+ dispatcher"]
+        Popularity["Open Library client<br/>Polly resilience"]
+    end
+
+    subgraph Backing["Backing services"]
+        SQL[("SQL Server /<br/>Azure SQL")]
+        Bus{{"Azure Service Bus"}}
+        Consumer["Consumer<br/>→ popularity snapshot"]
+        OpenLib[("Open Library API")]
+    end
+
+    subgraph Xcut["Cross-cutting · config-gated"]
+        Redis[("Redis<br/>L2 cache")]
+        Otel{{"OpenTelemetry<br/>OTLP"}}
+        Vault{{"Azure Key Vault"}}
     end
 
     Client --> Pipeline --> Controllers --> Services
-    Services --> Entities
     Services --> Repositories
     Services --> Popularity
-    Repositories --> SQL[("SQL Server / Azure SQL")]
+    Services --> Entities
+    Repositories --> SQL
     Repositories -->|same transaction| Outbox
-    Outbox --> SB{{"Azure Service Bus"}}
-    SB --> Consumer["Consumer → popularity snapshot"]
-    Popularity --> OL[("Open Library API")]
+    Outbox --> Bus --> Consumer
+    Popularity --> OpenLib
 
-    Services -.->|optional L2| Redis[("Redis")]
-    Api -.->|traces · metrics · logs| Otel{{"OTLP backend"}}
-    Api -.->|secrets| KV{{"Azure Key Vault"}}
+    Services -.->|L2 + backplane| Redis
+    Pipeline -.->|traces, metrics, logs| Otel
+    Pipeline -.->|secrets at startup| Vault
+
+    classDef layer fill:#eaf1f8,stroke:#41698f,color:#17262f;
+    classDef ext fill:#f1f2f3,stroke:#868c92,color:#1d1f21;
+    classDef cut fill:#fbf2dd,stroke:#c39b3a,color:#3a2f10;
+    class Pipeline,Controllers,Services,Entities,Repositories,Outbox,Popularity layer
+    class SQL,Bus,Consumer,OpenLib ext
+    class Redis,Otel,Vault cut
 ```
+
+<sub>**Blue** — the four Clean Architecture layers · **grey** — backing services the app talks to ·
+**amber** — cross-cutting concerns, each off until configured. Solid arrows: request / data flow ·
+dotted: optional, config-gated.</sub>
 
 **What one request actually touches.** A `GET /api/v1/books` gets a **correlation id** for tracing, is
 **authenticated** (Entra ID JWT) and **rate-limited** per client; a strong **ETag** may short-circuit it
