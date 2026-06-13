@@ -73,13 +73,6 @@ flowchart TB
     Services -.->|L2 + backplane| Redis
     Pipeline -.->|traces, metrics, logs| Otel
     Pipeline -.->|secrets at startup| Vault
-
-    classDef layer fill:#eaf1f8,stroke:#41698f,color:#17262f;
-    classDef ext fill:#f1f2f3,stroke:#868c92,color:#1d1f21;
-    classDef cut fill:#fbf2dd,stroke:#c39b3a,color:#3a2f10;
-    class Pipeline,Controllers,Services,Entities,Repositories,Outbox,Popularity layer
-    class SQL,Bus,Consumer,OpenLib ext
-    class Redis,Otel,Vault cut
 ```
 
 <sub>Solid arrows: request / data flow · dotted: optional, config-gated.</sub>
