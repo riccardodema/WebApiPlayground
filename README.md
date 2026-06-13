@@ -13,6 +13,80 @@ Architecture (layering enforced by tests), caching, idempotency, rate limiting, 
 observability and a transactional outbox, each implemented end-to-end and explained. Plus a
 versioned database, a full test pyramid, and CI/CD on **both Azure DevOps and GitHub Actions**.
 
+## A guided tour
+
+The domain is trivial on purpose — books and authors, plain CRUD. Everything worth looking at is the
+**production engineering wrapped around it**: the concerns a real .NET API faces once it leaves the demo
+stage. The map below is the whole system on one screen; the sections after it go deep on each piece, and
+the [decision records](docs/adr/) explain *why* every choice was made.
+
+Two directions to keep in mind. **At runtime, a request flows outward** — through the HTTP pipeline, into
+the use-case layer, out to the adapters (database, message broker, external APIs). **At build time,
+dependencies point inward** — the Domain knows nothing about the web or the database — and that rule is
+*enforced by a test*, not just written down.
+
+```mermaid
+flowchart TB
+    Client(["HTTP client"])
+
+    subgraph Api["Api — HTTP pipeline and composition root"]
+        Pipeline["CorrelationId · Entra JWT auth · Rate limiting<br/>Idempotency · ETag/concurrency · ProblemDetails"]
+        Controllers["Controllers v1 / v2 · OpenAPI + Scalar"]
+    end
+
+    subgraph Application["Application — use cases"]
+        Services["Services · DTOs · Validation · Caching decorator"]
+    end
+
+    subgraph Domain["Domain"]
+        Entities["Entities — pure model, zero dependencies"]
+    end
+
+    subgraph Infrastructure["Infrastructure — adapters"]
+        Repositories["EF Core repositories"]
+        Outbox["Transactional outbox + dispatcher"]
+        Popularity["Resilient Open Library client (Polly)"]
+    end
+
+    Client --> Pipeline --> Controllers --> Services
+    Services --> Entities
+    Services --> Repositories
+    Services --> Popularity
+    Repositories --> SQL[("SQL Server / Azure SQL")]
+    Repositories -->|same transaction| Outbox
+    Outbox --> SB{{"Azure Service Bus"}}
+    SB --> Consumer["Consumer → popularity snapshot"]
+    Popularity --> OL[("Open Library API")]
+
+    Services -.->|optional L2| Redis[("Redis")]
+    Api -.->|traces · metrics · logs| Otel{{"OTLP backend"}}
+    Api -.->|secrets| KV{{"Azure Key Vault"}}
+```
+
+**What one request actually touches.** A `GET /api/v1/books` gets a **correlation id** for tracing, is
+**authenticated** (Entra ID JWT) and **rate-limited** per client; a strong **ETag** may short-circuit it
+to `304`, otherwise it hits a **cached** service over an EF Core repository — all wrapped in
+**OpenTelemetry** traces, metrics and logs. A `POST` adds **idempotency** (safe retries), **validation**,
+**optimistic concurrency** (`If-Match` → 412/428), and writes the book *and* an **outbox** message in one
+transaction; that message is later published to **Azure Service Bus** and consumed to enrich the book with
+popularity data fetched from a **real external API** behind a **Polly** resilience pipeline. Any failure
+returns as an **RFC 7807 ProblemDetails** carrying that same correlation id.
+
+**What's around the code.** The database schema is **versioned as code** (DACPAC, the single source of
+truth), the Azure infrastructure is **versioned as code** (Bicep), secrets load from **Key Vault**, the
+app ships as a **hardened, non-root container**, and the **CI/CD pipeline is implemented twice** — once on
+Azure DevOps, once on GitHub Actions. A full **test pyramid** (unit, integration via Testcontainers,
+architecture via NetArchTest, IaC, Docker) is itself held honest by **mutation testing** and a
+**coverage ratchet** — because green tests aren't evidence on their own.
+
+> **Honest status.** Everything here runs locally and in CI against real dependencies or their **official
+> emulators** (SQL Server, Service Bus, Key Vault). The live Azure deployment is fully authored and
+> validated (Bicep + `what-if`, gated pipelines) but **not yet applied to a real subscription** — and the
+> docs say so wherever it's relevant, never more than is true.
+
+**Where to look next:** the per-capability sections below go deep on each piece; the
+[Architecture Decision Records](docs/adr/) are the short version of the reasoning behind them.
+
 ## Architecture
 
 Clean Architecture, dependencies point inwards (outer layers depend on inner, never the reverse):

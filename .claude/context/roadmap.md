@@ -176,8 +176,12 @@ emulato/locale): scala in cima appena esiste una subscription.
   CodeQL, scan immagine (Trivy) in CI.
 - ⬜ **OpenAPI contract gate**: snapshot del documento committato + diff in CI che blocca breaking
   change non dichiarati.
-- ⬜ **Presentazione**: sezione "recruiter tour" + diagramma mermaid nel README, ADR pubblici in
-  `docs/adr/` (ricavati dalle lessons), release/tag `v1.0`.
+- 🚧 **Presentazione**: sezione di alto livello accessibile ("A guided tour") + **diagramma mermaid**
+  (flusso runtime + layer) in cima al `README.md`, e **16 ADR pubblici** in
+  [`docs/adr/`](../../docs/adr/) (indice + uno per decisione architetturale, ricavati dalle lessons,
+  formato MADR-lite). Linguaggio semplice ma preciso; "honest status" su cosa è emulato vs deployato.
+  - ✅ Tour accessibile + mermaid nel README, ADR catalog in `docs/adr/` (con indice e principi ricorrenti).
+  - ⬜ **release/tag `v1.0`** — azione outward-facing, da fare con conferma dell'utente dopo il merge della PR.
 
 ---
 
