@@ -82,9 +82,7 @@ flowchart TB
     class Redis,Otel,Vault cut
 ```
 
-<sub>**Blue** — the four Clean Architecture layers · **grey** — backing services the app talks to ·
-**amber** — cross-cutting concerns, each off until configured. Solid arrows: request / data flow ·
-dotted: optional, config-gated.</sub>
+<sub>Solid arrows: request / data flow · dotted: optional, config-gated.</sub>
 
 **What one request actually touches.** A `GET /api/v1/books` gets a **correlation id** for tracing, is
 **authenticated** (Entra ID JWT) and **rate-limited** per client; a strong **ETag** may short-circuit it
